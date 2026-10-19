@@ -153,7 +153,8 @@ echo       remote:  %REMOTE_COMMIT%
 
 if /I "%LOCAL_COMMIT%"=="%REMOTE_COMMIT%" (
     echo.
-    echo [UP TO DATE] You already have the newest version. Nothing was changed.
+    echo [UP TO DATE] You already have the newest version.
+    echo           No updates needed - your copy is current.
     goto report_version
 )
 
@@ -375,9 +376,8 @@ for /d %%D in ("%ZIP_DIR%\*") do (
 if not defined SRC goto zip_failed
 if not exist "%SRC%\bot.py" goto zip_failed
 
-if exist "%SRC%\update_from_github.bat" copy /y "%SRC%\update_from_github.bat" "%REPO_ROOT%\update_from_github.bat.new" >nul
-
-rem Keep the local config, database, logs and virtualenv: only source files move.
+rem Do NOT redownload update_from_github.bat - keep the current version so it can
+rem apply future updates itself. Only source files move.
 robocopy "%SRC%" "%REPO_ROOT%" /E /XD .git logs .venv node_modules __pycache__ /XF config.json refresh_posts_state.json *.db update_from_github.bat /NFL /NDL /NJH /NJS /NP >nul
 if errorlevel 8 goto zip_copy_failed
 echo       [OK] files updated.
