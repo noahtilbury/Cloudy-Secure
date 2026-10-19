@@ -179,7 +179,8 @@ is optional and anything you leave out keeps the current design:
 
 Run `update_from_github.bat` inside the project folder (double-click, or from cmd).
 
-1. Finds git, checks the folder is a checkout, prints branch/remote/commit.
+1. Prints branch/remote/commit. A folder without `.git` (a ZIP download) skips git
+   entirely and takes the ZIP path described below.
 2. Fetches `origin` and compares your copy with GitHub.
 3. Lists the new commits and asks before changing anything.
 4. Pulls with `--ff-only`; if local edits block it, it explains how to keep them or
@@ -189,6 +190,14 @@ Run `update_from_github.bat` inside the project folder (double-click, or from cm
    existing one.
 7. Tells you whether the bot still needs a restart.
 
+**ZIP installs.** A copy extracted from GitHub's ZIP has no `.git`, so the updater
+downloads the latest source archive from the repository and copies it over the folder
+instead, keeping `config/config.json`, the database, `logs/` and `.venv/`. It cannot
+compare commits, so `/check` exits `10` and a normal run always refreshes to the
+latest `main`. The newer updater arrives as `update_from_github.bat.new`; swap it in
+with `move /y update_from_github.bat.new update_from_github.bat` after the window
+closes.
+
 | Flag | Meaning |
 | --- | --- |
 | *(none)* | Interactive: asks before pulling, waits for a key at the end. |
@@ -196,7 +205,8 @@ Run `update_from_github.bat` inside the project folder (double-click, or from cm
 | `/y` | Unattended: no confirmation prompt, no final pause. |
 
 Exit codes: `0` ok/up to date, `2` no git or not a repo, `3` fetch failed,
-`4` Python/venv problem, `5` pull blocked by local changes, `10` update available.
+`4` Python/venv problem, `5` pull blocked by local changes, `7` ZIP download or copy
+failed, `10` update available.
 
 `config/`, `config/refresh_posts_state.json`, the SQLite database and `logs/` are
 untracked, so updates never touch them.
@@ -259,9 +269,10 @@ are behind must be able to fast-forward.
   to a DM, so both keep working; older messages posted before this update still need
   to be re-sent with the command.
 - **Ban checks always fail** - `npm install` in `minecraft/ban_check` (Node.js 18+).
-- **Updater: "not a git checkout"** - download with `git clone`, not a ZIP; the updater
-  needs `.git`. **"could not be applied cleanly"** - local edits conflict with the
-  update; commit them or type `RESET` (your `config/` and database are kept).
+- **Updater in a ZIP copy** - a folder without `.git` updates by downloading the latest
+  source archive (Git is not needed); `config/`, the database, `logs/` and `.venv/` are
+  kept. **"could not be applied cleanly"** - local edits conflict with the update;
+  commit them or type `RESET` (your `config/` and database are kept).
 - **Logs** - `logs/securing.log`.
 
 ## Security note

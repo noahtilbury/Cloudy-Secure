@@ -14,6 +14,7 @@ for %%I in ("%~dp0.") do set "REPO_ROOT=%%~fI"
 set "EXITCODE=0"
 set "UNATTENDED=0"
 set "CHECKONLY=0"
+set "ZIP_MODE=0"
 
 :parse_args
 if "%~1"=="" goto args_done
@@ -55,19 +56,12 @@ if not defined GIT if exist "%ProgramFiles(x86)%\Git\cmd\git.exe" set GIT="%Prog
 if not defined GIT if exist "%LocalAppData%\Programs\Git\cmd\git.exe" set GIT="%LocalAppData%\Programs\Git\cmd\git.exe"
 :git_ready
 
-if not defined GIT (
-    echo [ERROR] Git is not installed or not on PATH.
-    echo         Install it from https://git-scm.com/download/win and run this again.
-    set "EXITCODE=2"
-    goto end
-)
-
 echo [1/6] Checking the repository...
-if not exist ".git" (
-    echo [ERROR] This folder is not a git checkout.
-    echo         Download the project with:
-    echo             git clone %REPO_URL%
-    echo         and run update_from_github.bat from inside that folder.
+if not exist ".git" goto zip_mode
+
+if not defined GIT (
+    echo [ERROR] This is a git checkout but Git is not installed or on PATH.
+    echo         Install it from https://git-scm.com/download/win and run this again.
     set "EXITCODE=2"
     goto end
 )
@@ -208,6 +202,9 @@ if errorlevel 1 goto pull_failed
 
 echo [OK] Updated to %REMOTE_COMMIT%.
 
+:: ZIP installs jump here after copying the downloaded archive.
+:after_pull
+
 :: ---------------------------------------------------------------------------
 :: Python environment, dependencies, database
 :: ---------------------------------------------------------------------------
@@ -279,6 +276,12 @@ echo ============================================================
 echo  Done. Your copy is at:
 echo  %REMOTE_COMMIT%
 echo ------------------------------------------------------------
+if exist "%REPO_ROOT%\update_from_github.bat.new" (
+    echo  A newer updater was downloaded as update_from_github.bat.new.
+    echo  After closing this window, swap it in with:
+    echo      move /y update_from_github.bat.new update_from_github.bat
+    echo ------------------------------------------------------------
+)
 set "RUNNING_PID="
 if exist "logs\bot.lock" set /p RUNNING_PID=<"logs\bot.lock"
 if not defined RUNNING_PID goto no_bot_running
@@ -295,6 +298,119 @@ echo  or  .venv\Scripts\python.exe bot.py
 :end_summary
 echo ============================================================
 goto end
+
+:: ---------------------------------------------------------------------------
+:: ZIP install (no .git) - download the latest source archive and copy it over
+:: ---------------------------------------------------------------------------
+:zip_mode
+set "ZIP_MODE=1"
+set "REMOTE_COMMIT=latest main (ZIP install)"
+
+echo       no .git folder - this copy was extracted from a ZIP, not cloned.
+echo       The latest source archive will be downloaded from %REPO_SHORT%
+echo       and copied over this folder instead.
+echo.
+echo [2/6] Checking for the latest version on GitHub...
+
+if "%CHECKONLY%"=="1" (
+    echo.
+    echo [CHECK ONLY] A ZIP install cannot be compared commit-by-commit.
+    echo              Run this file without /check to download the latest main.
+    set "EXITCODE=10"
+    goto end
+)
+
+if "%UNATTENDED%"=="0" (
+    echo.
+    echo Ready to download the latest version and copy it over this folder.
+    echo config\config.json, the database, logs\ and .venv\ are NOT touched.
+    choice /c YN /n /m "Continue? [Y/N] "
+    if errorlevel 2 (
+        echo Update cancelled - nothing was changed.
+        set "EXITCODE=0"
+        goto end
+    )
+)
+
+set "ZIP_FILE=%TEMP%\autosecure-update-%RANDOM%%RANDOM%.zip"
+set "ZIP_DIR=%TEMP%\autosecure-update-%RANDOM%%RANDOM%"
+set "ZIP_URL=https://codeload.github.com/%REPO_SHORT%/zip/refs/heads/main"
+
+echo.
+echo [3/6] Downloading the source archive...
+where curl >nul 2>&1
+if errorlevel 1 goto zip_download_ps
+curl -L -s -S -o "%ZIP_FILE%" "%ZIP_URL%"
+goto zip_download_done
+
+:zip_download_ps
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Invoke-WebRequest -UseBasicParsing -Uri '%ZIP_URL%' -OutFile '%ZIP_FILE%'"
+
+:zip_download_done
+if not exist "%ZIP_FILE%" goto zip_failed
+for %%F in ("%ZIP_FILE%") do if %%~zF LSS 1000 goto zip_failed
+echo       [OK] archive downloaded.
+
+echo [4/6] Extracting and copying the new files...
+mkdir "%ZIP_DIR%" >nul 2>&1
+rem Use the Windows tar (bsdtar, zip-capable). A GNU tar earlier on PATH cannot
+rem read ZIP at all, so it is never used here.
+set "BSD_TAR=%SystemRoot%\System32\tar.exe"
+if not exist "%BSD_TAR%" goto zip_extract_ps
+"%BSD_TAR%" -xf "%ZIP_FILE%" -C "%ZIP_DIR%"
+if errorlevel 1 goto zip_extract_ps
+goto zip_extract_done
+
+:zip_extract_ps
+powershell -NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath '%ZIP_FILE%' -DestinationPath '%ZIP_DIR%' -Force"
+
+:zip_extract_done
+set "SRC="
+for /d %%D in ("%ZIP_DIR%\*") do (
+    set "SRC=%%~fD"
+    goto zip_src_found
+)
+:zip_src_found
+if not defined SRC goto zip_failed
+if not exist "%SRC%\bot.py" goto zip_failed
+
+if exist "%SRC%\update_from_github.bat" copy /y "%SRC%\update_from_github.bat" "%REPO_ROOT%\update_from_github.bat.new" >nul
+
+rem Keep the local config, database, logs and virtualenv: only source files move.
+robocopy "%SRC%" "%REPO_ROOT%" /E /XD .git logs .venv node_modules __pycache__ /XF config.json refresh_posts_state.json *.db update_from_github.bat /NFL /NDL /NJH /NJS /NP >nul
+if errorlevel 8 goto zip_copy_failed
+echo       [OK] files updated.
+echo       [OK] config\config.json, database, logs and .venv were kept.
+
+call :zip_cleanup
+echo.
+echo [OK] Updated to the latest main.
+goto after_pull
+
+:zip_failed
+call :zip_cleanup
+echo.
+echo [ERROR] Could not download or extract the latest version.
+echo         Common reasons:
+echo           - no internet connection, or a proxy blocking github.com
+echo           - the download was interrupted
+echo         Check your network, then run this file again.
+set "EXITCODE=7"
+goto end
+
+:zip_copy_failed
+call :zip_cleanup
+echo.
+echo [WARN] Some files could not be copied - they are probably open.
+echo        Close the bot window (and any editor holding these files), then
+echo        run this file again.
+set "EXITCODE=7"
+goto end
+
+:zip_cleanup
+rd /s /q "%ZIP_DIR%" >nul 2>&1
+del /q "%ZIP_FILE%" >nul 2>&1
+goto :eof
 
 :: ---------------------------------------------------------------------------
 :: Failure paths
@@ -343,6 +459,10 @@ echo.
 echo   /check   Only check whether an update exists.
 echo            Exit code 10 = update available, 0 = up to date.
 echo   /y       Unattended: no confirmation prompt and no final pause.
+echo.
+echo A folder without .git (a ZIP download) is updated by downloading the latest
+echo source archive and copying it over the folder. config\config.json, the
+echo database, logs\ and .venv\ are kept either way.
 echo.
 echo Run it with no arguments for the normal interactive updater.
 set "EXITCODE=0"
