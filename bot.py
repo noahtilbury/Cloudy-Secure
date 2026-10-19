@@ -280,6 +280,14 @@ def claim_single_instance() -> bool:
     poller and write the same SQLite DB. The first copy keeps a PID lock in
     ``logs/bot.lock``, so a later copy exits instead of duplicating all of it.
     """
+    # A fresh clone has no logs/ folder yet (setup_logging() creates it later, after
+    # this check runs), which used to make the lock write raise FileNotFoundError and
+    # silently disable the guard.
+    try:
+        os.makedirs(os.path.dirname(LOCK_FILE), exist_ok=True)
+    except Exception:
+        logging.getLogger("bot").exception("Could not create %s", os.path.dirname(LOCK_FILE))
+
     other = 0
     try:
         with open(LOCK_FILE, "r", encoding="utf-8") as fh:
