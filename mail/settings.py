@@ -248,8 +248,25 @@ def resolve_display_inbox(display: str | None) -> str | None:
     if "@" not in text:
         return None
     local, _, domain = text.partition("@")
-    if not domain or not is_our_inbox(f"x@{domain}"):
-        print(f"[resolve] domain {domain} not in our inboxes")
+    # The domains cache can be stale right after a mailbox is provisioned, which
+    # made a freshly created inbox look foreign ("domain not in our inboxes")
+    # while MS was already mailing the OTP there. Union the live DB domains with
+    # the configured ones instead of trusting either alone.
+    if not domain:
+        return None
+    try:
+        from database.database import DBConnection
+
+        with DBConnection() as db:
+            db_domains = {
+                str(row[0]).partition("@")[2].strip().lower()
+                for row in db.get_security_email_accounts()
+                if "@" in str(row[0])
+            }
+    except Exception:
+        db_domains = set()
+    if domain not in (db_domains | readable_domains()):
+        print(f"[resolve] domain {domain} not in our inboxes (DB check)")
         return None
     prefix = local.split("*", 1)[0]
     candidates = [

