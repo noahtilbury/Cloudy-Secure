@@ -36,8 +36,13 @@ DEFAULT_COLOURS = {
     "warning": 0xFEE75C,
     "info": 0x5865F2,
 }
-DEFAULT_FOOTER = "-# Minecraft Verification"
+# The verify card ships without a footer. ``embeds.components_v2.footer`` can
+# still add one (a plain string, or "-# text" for Discord subtext); an empty
+# string means "no footer", which is why the config is read with a sentinel
+# instead of ``or DEFAULT_FOOTER``.
+DEFAULT_FOOTER = ""
 DEFAULT_HEADING = "🔷"
+_MISSING = object()
 
 BUTTON_STYLES = {
     "primary": discord.ButtonStyle.primary,
@@ -87,8 +92,17 @@ RED = _PALETTE["error"]
 YELLOW = _PALETTE["warning"]
 INFO = _PALETTE["info"]
 
-# The public verification prompt keeps its own small footer label.
-VERIFY_FOOTER = str(_V2.get("footer") or DEFAULT_FOOTER)
+
+def _footer_text(cfg: dict) -> str:
+    """Footer line for the verify card; "" when the config asks for none."""
+    value = cfg.get("footer", _MISSING)
+    if value is _MISSING or value is None:
+        return DEFAULT_FOOTER
+    return str(value).strip()
+
+
+# The public verification prompt keeps its own small footer label (usually none).
+VERIFY_FOOTER = _footer_text(_V2)
 HEADING_EMOJI = str(_V2.get("heading_emoji") or DEFAULT_HEADING)
 
 
@@ -210,7 +224,8 @@ def _verification_content() -> tuple[str, Optional[str]]:
         lines = [f"{HEADING_EMOJI} **{title}**"]
         if description:
             lines.append(description)
-        lines.append(VERIFY_FOOTER)
+        if VERIFY_FOOTER:
+            lines.append(VERIFY_FOOTER)
         return "\n".join(lines), thumb
 
     default = (embeds.get("verification") or {}).get("default") or {}
@@ -226,7 +241,8 @@ def _verification_content() -> tuple[str, Optional[str]]:
             lines.append(f"**{name}**")
         if value:
             lines.append(value)
-    lines.append(VERIFY_FOOTER)
+    if VERIFY_FOOTER:
+        lines.append(VERIFY_FOOTER)
     return "\n".join(lines), (default.get("thumbnail") or None)
 
 
@@ -292,7 +308,10 @@ def verify_card(
     thumbnail: Optional[str] = None,
 ) -> discord.ui.DesignerView:
     """Public verification prompt (green, Verify button inside the card)."""
-    text = f"{HEADING_EMOJI} **{title}**\n{description}\n{VERIFY_FOOTER}"
+    lines = [f"{HEADING_EMOJI} **{title}**", description]
+    if VERIFY_FOOTER:
+        lines.append(VERIFY_FOOTER)
+    text = "\n".join(line for line in lines if line)
     return card(
         GREEN,
         text,

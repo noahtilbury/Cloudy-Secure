@@ -327,5 +327,10 @@ Thumbs.db
 .freebuff/
 *.tmp
 
+# Local scratch / one-off files that are not part of the bot
+stealer.py
+_ref_embed.*
+_tmp_*.py
+
 # Runtime state (message ids of the refreshed posts) - local to each install
 config/refresh_posts_state.json

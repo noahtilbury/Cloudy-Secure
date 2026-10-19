@@ -160,14 +160,16 @@ is optional and anything you leave out keeps the current design:
         "warning": "#FEE75C",
         "info": "#5865F2"
     },
-    "footer": "-# Minecraft Verification",
+    "footer": "",
     "heading_emoji": "\ud83d\udd37",
     "verify_button": { "label": "Verify", "emoji": "\u2705", "style": "success" }
 }
 ```
 
 - `colors` accepts `"#RRGGBB"`, `"0xRRGGBB"` or a decimal integer.
-- `footer` is the small `-# ...` line under the verify prompt.
+- `footer` is the small line under the verify prompt. It ships empty (no footer);
+  set it to `"-# Minecraft Verification"` to get Discord subtext back, or any other
+  string to render it as-is.
 - `verify_button`: `label`, optional `emoji` (`""` removes it) and one of `primary`,
   `secondary`, `success`, `danger`.
 - The card text is `embeds.verify_card` (`title`, `description`, `thumbnail`); if that

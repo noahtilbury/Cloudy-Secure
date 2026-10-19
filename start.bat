@@ -6,6 +6,14 @@ rem Double-click launcher. It does not use PowerShell on purpose: Windows ships
 rem with the execution policy set to Restricted, which makes start.ps1 fail with
 rem "running scripts is disabled on this system".
 
+rem UTF-8 console. Log lines carry emoji and guild names ("┃", "™") that a
+rem cp1252/cp850 console cannot encode, which used to print a full
+rem "--- Logging error ---" traceback per line. bot.py also forces UTF-8 on its own
+rem streams; this keeps the console window in the same code page.
+chcp 65001 >nul
+set "PYTHONUTF8=1"
+set "PYTHONIOENCODING=utf-8"
+
 set "ROOT=%~dp0"
 cd /d "%ROOT%"
 

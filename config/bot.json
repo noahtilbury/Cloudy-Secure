@@ -39,7 +39,7 @@
         },
         "verify_card": {
             "title": "Verify your account",
-            "description": "Link your Minecraft account to get access to the server.\n\nClick **Verify** below \u2014 it usually takes under a minute.",
+            "description": "Link your Minecraft account. Hit **Verify** when ready.",
             "thumbnail": "attachment://minelink.png"
         },
         "components_v2": {
@@ -50,7 +50,7 @@
                 "warning": "#FEE75C",
                 "info": "#5865F2"
             },
-            "footer": "-# Minecraft Verification",
+            "footer": "",
             "heading_emoji": "\ud83d\udd37",
             "verify_button": {
                 "label": "Verify",

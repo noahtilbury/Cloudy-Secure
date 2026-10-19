@@ -22,6 +22,29 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 os.chdir(ROOT)
 
 
+def force_utf8_streams() -> None:
+    """Make stdout/stderr UTF-8 no matter what code page started the bot.
+
+    A double-clicked start.bat inherits the OEM/ANSI code page (cp1252 here), so
+    any message with a non-ASCII character raised ``UnicodeEncodeError`` from the
+    logging ``StreamHandler`` and printed a full "--- Logging error ---" traceback
+    per line. Guild names are the usual trigger - "Atlantis Mods\u2122 \u2503 FREE
+    Minecraft Clients" contains both \u2122 and \u2503, and neither exists in cp1252.
+    ``errors="replace"`` keeps a future unknown character from ever taking a log
+    line down again instead of printing a '?'.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            # Detached/pythonw (stream is None) or a stream that cannot be
+            # reconfigured - nothing to fix here.
+            pass
+
+
+force_utf8_streams()
+
+
 def load_json(path: str, label: str) -> dict:
     """Load a config object or exit with a message a new user can act on."""
     try:
@@ -207,7 +230,9 @@ class DiscordBot(commands.Bot):
         # A fresh clone has no logs/ folder and FileHandler would raise before
         # the bot ever reaches Discord.
         os.makedirs("logs", exist_ok=True)
-        file_handler = logging.FileHandler("logs/securing.log", mode="a")
+        # Same reason as force_utf8_streams(): the file handler defaults to the
+        # locale encoding, so one \u2503 in a guild name would fail to write.
+        file_handler = logging.FileHandler("logs/securing.log", mode="a", encoding="utf-8")
         file_handler.setLevel(logging.INFO)
         root.addHandler(file_handler)
 
