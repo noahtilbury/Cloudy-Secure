@@ -44,6 +44,46 @@ def load_json(path: str, label: str) -> dict:
 config = load_json("config/config.json", "bot config")
 settings = load_json("config/bot.json", "bot settings")
 
+
+def validate_config(data: dict) -> None:
+    """Stop with instructions when the token placeholder was never filled in.
+
+    start.bat creates config/config.json from the example so a fresh download
+    gets a file, not a crash; that file has an empty token until the user edits
+    it. Failing here prints what to do instead of a discord LoginFailure.
+    """
+    tokens = data.get("tokens")
+    if isinstance(tokens, dict):
+        token = str(tokens.get("bot_token") or "").strip()
+    else:
+        token = ""
+    upper = token.upper()
+    if (
+        not token
+        or upper in {"YOUR_BOT_TOKEN", "BOT_TOKEN", "TOKEN", "PASTE_TOKEN_HERE"}
+        or upper.startswith("YOUR_")
+        or token.startswith("<")
+    ):
+        print("[X] config/config.json has no bot token yet.", flush=True)
+        print("    Open config/config.json and set tokens.bot_token to your bot's token", flush=True)
+        print("    (Discord Developer Portal -> your application -> Bot -> Reset Token).", flush=True)
+        print("    Set owners to your Discord user ID too, or admin commands stay locked.", flush=True)
+        raise SystemExit(2)
+
+    owners = data.get("owners")
+    valid_owners = (
+        [owner for owner in owners if str(owner).strip() not in ("", "0", "None")]
+        if isinstance(owners, list)
+        else []
+    )
+    if not valid_owners:
+        print("[!] config/config.json has no owners - admin commands will refuse everyone.", flush=True)
+        print("    Add your Discord user ID to owners and restart.", flush=True)
+
+
+validate_config(config)
+
+
 class DiscordBot(commands.Bot):
     def __init__(self):
         super().__init__(

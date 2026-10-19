@@ -3,6 +3,11 @@ setlocal EnableExtensions DisableDelayedExpansion
 
 title sunnysecure - update from GitHub
 
+:: The repository this project is published from. Every clone/remote hint below
+:: uses it, so moving the project only needs changing these two lines.
+set "REPO_URL=https://github.com/noahtilbury/Discord-Minecraft-AutoSecure.git"
+set "REPO_SHORT=noahtilbury/Discord-Minecraft-AutoSecure"
+
 :: SHIFT also overwrites %0, so capture the script folder before parsing args.
 for %%I in ("%~dp0.") do set "REPO_ROOT=%%~fI"
 
@@ -61,7 +66,7 @@ echo [1/6] Checking the repository...
 if not exist ".git" (
     echo [ERROR] This folder is not a git checkout.
     echo         Download the project with:
-    echo             git clone https://github.com/waitno01/sunnysecure.git
+    echo             git clone %REPO_URL%
     echo         and run update_from_github.bat from inside that folder.
     set "EXITCODE=2"
     goto end
@@ -77,7 +82,7 @@ for /f "delims=" %%U in ('%GIT% config --get remote.origin.url 2^>nul') do set "
 if not defined REMOTE_URL (
     echo [ERROR] No git remote named "origin" is configured.
     echo         Fix it with:
-    echo             git remote add origin https://github.com/waitno01/sunnysecure.git
+    echo             git remote add origin %REPO_URL%
     set "EXITCODE=2"
     goto end
 )
@@ -85,6 +90,33 @@ if not defined REMOTE_URL (
 echo       git:     %GIT%
 echo       branch:  %BRANCH%
 echo       origin:  %REMOTE_URL%
+
+:: ---------------------------------------------------------------------------
+:: Wrong repository guard: the code used to be published at waitno01/sunnysecure.
+:: A copy still pointing there would download someone else's repository instead of
+:: this project, so offer to repoint it before fetching.
+:: ---------------------------------------------------------------------------
+echo %REMOTE_URL% | findstr /I /C:"waitno01/sunnysecure" >nul
+if errorlevel 1 goto origin_ok
+echo.
+echo [WARN] This folder tracks waitno01/sunnysecure, not where this project is
+echo        published. New versions come from %REPO_SHORT%.
+if "%UNATTENDED%"=="1" (
+    echo        Fix it once, then run this file again:
+    echo            git remote set-url origin %REPO_URL%
+    goto origin_ok
+)
+choice /c YN /n /m "Switch origin to %REPO_SHORT% now? [Y/N] "
+if errorlevel 2 goto origin_ok
+%GIT% remote set-url origin %REPO_URL%
+if errorlevel 1 (
+    echo [WARN] Could not change the remote. Run this by hand:
+    echo            git remote set-url origin %REPO_URL%
+    goto origin_ok
+)
+set "REMOTE_URL=%REPO_URL%"
+echo        [OK] origin is now %REPO_SHORT%.
+:origin_ok
 
 :: ---------------------------------------------------------------------------
 :: Fetch

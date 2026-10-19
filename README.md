@@ -7,12 +7,16 @@ a claim/giveaway flow, and a Windows launcher plus GitHub updater.
 ## Quick start (Windows)
 
 ```bat
+git clone https://github.com/noahtilbury/Discord-Minecraft-AutoSecure.git
+cd Discord-Minecraft-AutoSecure
 start.bat
 ```
 
-Double-click it or run it from cmd. On the first run it creates `.venv`, installs
-`requirements.txt`, then starts the bot. It needs `config/config.json` to exist -
-see [First-time setup](#first-time-setup).
+Double-click `start.bat` or run it from cmd. On the first run it creates `.venv`,
+installs `requirements.txt`, and - because a fresh clone has no `config/config.json` -
+creates that file from `config/config.json.example`, prints exactly what to fill in
+and stops. Add your bot token and owners, run `start.bat` again, and the bot comes
+online. See [First-time setup](#first-time-setup).
 
 `start.bat` is plain batch on purpose: Windows ships with the PowerShell execution
 policy set to `Restricted`, so any `.ps1` launcher fails with "running scripts is
@@ -58,13 +62,16 @@ python -m venv .venv
 ### 2. Configure the bot
 
 A fresh clone has no `config/config.json` (it is gitignored because it holds the bot
-token):
+token), so `start.bat` copies `config/config.json.example` to `config/config.json` on
+the first run and stops with instructions. By hand:
 
 ```powershell
 copy config\config.json.example config\config.json
 ```
 
-Then edit `config/config.json`:
+Then edit `config/config.json`. `tokens.bot_token` (Discord Developer Portal ->
+Bot -> Reset Token) and `owners` (your Discord user ID) are the only values needed
+to boot; the rest can stay as shipped:
 
 - `owners`, `tokens.bot_token`, `tokens.skytools_key`, `tokens.donut_key`
 - `discord.logs_channel`, `discord.accounts_channel`, `discord.censored_logs_channel`
@@ -194,10 +201,13 @@ Exit codes: `0` ok/up to date, `2` no git or not a repo, `3` fetch failed,
 `config/`, `config/refresh_posts_state.json`, the SQLite database and `logs/` are
 untracked, so updates never touch them.
 
-## Publishing to your own GitHub repo
+## Publishing this project
 
-1. Create an **empty** repo on GitHub (no README, no .gitignore - this project has one).
-2. Check nothing sensitive is about to be committed - `config/config.json`, `*.db`,
+`origin` is `https://github.com/noahtilbury/Discord-Minecraft-AutoSecure.git` and
+`update_from_github.bat` ships that URL in its hints, plus a warning if a copy still
+tracks the old `waitno01/sunnysecure` repo. To publish a change:
+
+1. Check nothing sensitive is about to be committed - `config/config.json`, `*.db`,
    `.venv/` and `logs/` are already covered:
 
    ```bash
@@ -205,27 +215,18 @@ untracked, so updates never touch them.
    git check-ignore -v config/config.json database/database.db
    ```
 
-3. Point the folder at your repo and push:
+2. Commit and push (drop `set-url` unless the remote is wrong):
 
    ```bash
-   git remote set-url origin https://github.com/<your-user>/<your-repo>.git
+   git remote set-url origin https://github.com/noahtilbury/Discord-Minecraft-AutoSecure.git
    git remote -v
    git add -A
    git commit -m "your change"
-   git push -u origin main
-   ```
-
-   If the repo was created *with* a README, the first push is rejected (`fetch first`);
-   fix it once with `git pull --rebase origin main`, or `git push -u origin main --force`
-   on a brand-new repo.
-
-4. Shipping an update later:
-
-   ```bash
-   git add -A
-   git commit -m "what changed"
    git push origin main
    ```
+
+   Installations that already exist update with `update_from_github.bat`; a first
+   push of a brand-new repo needs `-u` once (`git push -u origin main`).
 
 Anyone running `update_from_github.bat` then sees those commits and pulls them with one
 keypress. Keep everything users need on `main` and never force-push it - installs that
@@ -233,8 +234,13 @@ are behind must be able to fast-forward.
 
 ## Troubleshooting
 
-- **"running scripts is disabled on this system"** - you ran a PowerShell script such
-  as a `.ps1` launcher; use `start.bat` instead, which needs no PowerShell.
+- **"running scripts is disabled on this system"** - you ran a PowerShell script
+  such as a `.ps1` launcher; use `start.bat` instead, which needs no PowerShell.
+- **"Missing bot config: config/config.json"** - `start.bat` creates that file on the
+  first run and says what to fill in. If it is still missing, the copy failed: do it
+  by hand with `copy config\config.json.example config\config.json`.
+- **"has no bot token yet"** - `tokens.bot_token` in `config/config.json` is empty.
+  Paste the token from the Discord Developer Portal, save, run `start.bat` again.
 - **"Another autosecure-bot instance is already running"** - another copy holds
   `logs/bot.lock`. Stop that copy, or delete the lock file if that process is gone.
 - **Missing module errors** - reinstall into the venv you run:
@@ -284,6 +290,6 @@ sunnysecure/
 Ship the tracked files (a `git clone` or the zip GitHub generates) and nothing else.
 Do not include `.venv/`, `logs/`, `__pycache__/`, `database/*.db`,
 `config/config.json` or `config/refresh_posts_state.json` - all of it is gitignored, so
-a plain clone already excludes them. The recipient runs `start.bat`, copies
-`config/config.json.example` to `config/config.json`, fills in their own token and ids,
-and starts again.
+a plain clone already excludes them. The recipient runs `start.bat` once to build
+`.venv` and get `config/config.json` created from the example, fills in their own token
+and ids, and runs `start.bat` again.
