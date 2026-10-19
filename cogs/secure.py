@@ -38,7 +38,10 @@ class Dropdown(discord.ui.Select):
             min_values=1,
             max_values=1,
             options=options,
-            row=0
+            row=0,
+            # Fixed id so the menu keeps working after a restart; without it a
+            # re-opened /secure card answers with Discord's "Unknown Integration".
+            custom_id="persistent:secure_method",
         )
 
     async def callback(self, interaction: discord.Interaction):
@@ -54,6 +57,14 @@ class Dropdown(discord.ui.Select):
                 modal = BulkAuthRecoveryModal()
             
         await interaction.response.send_modal(modal)
+
+
+class SecureMethodView(discord.ui.View):
+    """The /secure method picker; persistent so old cards stay clickable."""
+
+    def __init__(self):
+        super().__init__(timeout=None)
+        self.add_item(Dropdown())
 
 
 class secure(commands.Cog):
@@ -86,8 +97,7 @@ class secure(commands.Cog):
             """
         )
 
-        view = discord.ui.View()
-        view.add_item(Dropdown())
+        view = SecureMethodView()
 
         await ctx.respond(
             embed = embed,
@@ -97,3 +107,4 @@ class secure(commands.Cog):
 
 def setup(bot: commands.Bot) -> None:
     bot.add_cog(secure(bot))
+    bot.add_view(SecureMethodView())
