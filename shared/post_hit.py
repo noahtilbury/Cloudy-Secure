@@ -30,6 +30,7 @@ from ui import theme
 from database.database import DBConnection
 from ui.buttons.account_details import accountInfo
 from ui.buttons.claim_button import ClaimButton, claimed_card
+from ui.buttons.embed_buttons import ButtonOptions
 
 
 async def _send_claim_dm(
@@ -383,10 +384,8 @@ async def publish_embed_secure_result(
             view=ButtonOptions(interaction.user, interaction.user.id, username),
             email=email,
         )
-        # Leftover creds / Extra Info go to logs_channel only — never the hits room
-        # and never as a second ephemeral (user keeps one fail status).
-        if isinstance(secured_account, dict):
-            await _send_leftover_to_logs(interaction, secured_account, email)
+        # A failed run carries no credentials to dump, so the log embed above is
+        # the whole record. The user gets one ephemeral status card.
         await set_verify_ephemeral(interaction, _verify_fail_card(short))
         return False
 
