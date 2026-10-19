@@ -249,6 +249,7 @@ def resolve_display_inbox(display: str | None) -> str | None:
         return None
     local, _, domain = text.partition("@")
     if not domain or not is_our_inbox(f"x@{domain}"):
+        print(f"[resolve] domain {domain} not in our inboxes")
         return None
     prefix = local.split("*", 1)[0]
     candidates = [
@@ -256,6 +257,7 @@ def resolve_display_inbox(display: str | None) -> str | None:
         for addr in _our_mailbox_addresses()
         if addr.endswith(f"@{domain}") and addr.partition("@")[0].startswith(prefix)
     ]
+    print(f"[resolve] display={display}, prefix={prefix}, domain={domain}, candidates={candidates}")
     if not candidates:
         return None
     if len(candidates) == 1:
@@ -266,7 +268,9 @@ def resolve_display_inbox(display: str | None) -> str | None:
     if cleartext:
         for addr in reversed(candidates):
             if addr.partition("@")[0].startswith(cleartext):
+                print(f"[resolve] matched by cleartext {cleartext} -> {addr}")
                 return addr
+    print(f"[resolve] no cleartext match, returning newest: {candidates[-1]}")
     return candidates[-1]
 
 

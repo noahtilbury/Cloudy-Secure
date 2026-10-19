@@ -40,7 +40,7 @@ def build_claim_embed(account: dict, temp_password: str = "") -> discord.Embed:
     embed.add_field(name="Email", value=f"```{email}```", inline=False)
     embed.add_field(name="Password", value=f"```{password}```", inline=True)
     embed.add_field(name="Temp Email", value=f"```{temp_email}```", inline=True)
-    embed.add_field(name="Temp Password", value=f"```{temp_password}```", inline=True)
+    embed.add_field(name="Temp Password", value=f"`{temp_password}`", inline=True)
     embed.add_field(
         name="Recovery Code",
         value=f"```{_clean(ms.get('recovery_code'))}```",
@@ -55,8 +55,8 @@ def build_claim_embed(account: dict, temp_password: str = "") -> discord.Embed:
             name="Temp Email login (mail.tm)",
             value=(
                 f"Address: `{temp_email}`\n"
-                f"Password: `{temp_password}`\n"
-                "1. Open https://mail.tm\n"
+                f"Password: `{temp_password}`"
+                "\n1. Open https://mail.tm\n"
                 "2. Sign in with the address and password above\n"
                 "3. Open the Microsoft email to read the verification code"
             ),

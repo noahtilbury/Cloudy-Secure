@@ -7,6 +7,7 @@ title sunnysecure - update from GitHub
 :: uses it, so moving the project only needs changing these two lines.
 set "REPO_URL=https://github.com/noahtilbury/Discord-Minecraft-AutoSecure.git"
 set "REPO_SHORT=noahtilbury/Discord-Minecraft-AutoSecure"
+set "REPO_OWNER=noahtilbury"
 
 :: SHIFT also overwrites %0, so capture the script folder before parsing args.
 for %%I in ("%~dp0.") do set "REPO_ROOT=%%~fI"

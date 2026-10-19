@@ -143,6 +143,11 @@ async def send_auth(session: httpx.AsyncClient, email: str, proof: str = None) -
             # while MS had quietly refused the request. Confirm the send via the
             # shared state rule and cycle the purpose/forceotclogin variants when
             # MS answers with a reject state.
+            #
+            # Rate-limit resilience: MS commonly returns State 204 ("not sent")
+            # when too many OTP requests hit in a short window. Each rejected
+            # attempt is backed off exponentially (1.5s, 3s, 6s, ...) so the
+            # account has time to cool down before the next purpose is tried.
             from securing.utils.security_information import _gotc_state_ok
 
             # Two types of OTPs
@@ -170,10 +175,11 @@ async def send_auth(session: httpx.AsyncClient, email: str, proof: str = None) -
 
             for idx, (purpose, force) in enumerate(gotc_plan):
                 if idx:
-                    # Space the retries out: MS throttles rapid repeats. Kept
-                    # short — the old 2s×idx ladder paid 12s of pure sleep on
-                    # every attempt, and a secure verifies 2-4 times.
-                    await asyncio.sleep(0.8 * idx)
+                    # Space the retries out: MS throttles rapid repeats.
+                    # Use longer, backoff-based delays so a rate-limited
+                    # account has time to cool down between attempts.
+                    delay = 1.5 * (2 ** (idx - 1))  # 1.5, 3.0, 6.0, ...
+                    await asyncio.sleep(delay)
                 payload = {
                     "login": email,
                     "flowtoken": flowtoken,

@@ -505,13 +505,19 @@ async def _otp_flow(
     # Microsoft masks the proof name (jb*****@maxxspace.com). Polling that masked
     # string never finds the code even though the mail reached our real mailbox,
     # which showed up as "OTP did not arrive" while MS had in fact sent it.
-    security_email = email_info.get("otc_inbox") or resolve_display_inbox(display) or display
+    otc_inbox = email_info.get("otc_inbox")
+    resolved = resolve_display_inbox(display) if otc_inbox is None else otc_inbox
+    security_email = resolved or display
     flowtoken = proof["data"]
     ppft = email_info.get("ppft")
 
     print(f"[+] - Found security email: {security_email}")
+    print(f"[+] - OTC display: {display}, otc_inbox: {otc_inbox}, resolved: {resolved}")
 
-    if is_our_inbox(security_email):
+    if is_our_inbox(security_email) and "*" not in security_email:
+        # Only auto-read when we have the REAL mailbox address, not the masked
+        # display. A masked address like m6*****@maxxspace.com passes
+        # is_our_inbox (domain matches) but doesn't exist as a real mailbox.
         if email_info.get("otc_sent") is False:
             # MS answered the request without mailing anything (State 206):
             # waiting on the inbox cannot succeed, so offer an immediate retry.
