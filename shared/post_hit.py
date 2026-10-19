@@ -97,6 +97,31 @@ def _verify_fail_card(reason: str | None = None) -> discord.ui.DesignerView:
     return theme.fail_card("Could not finish verification", description)
 
 
+async def _dm_result(interaction: Interaction, payload) -> bool:
+    """Last resort when the interaction webhook has expired.
+
+    A secure can run longer than the 15-minute interaction token. Editing the
+    original response then fails with ``404 Unknown Webhook`` (code 10015) --
+    the Discord client shows "Unknown Integration" and the user never learns
+    the outcome. A DM always works.
+    """
+    user = getattr(interaction, "user", None)
+    if user is None:
+        return False
+    try:
+        if isinstance(payload, discord.ui.DesignerView):
+            await user.send(view=payload)
+        else:
+            await user.send(embed=payload)
+    except Exception:
+        log.warning(
+            "could not DM the verify result to %s", getattr(user, "id", "?"), exc_info=True
+        )
+        return False
+    log.info("verify result sent by DM to %s (interaction had expired)", getattr(user, "id", "?"))
+    return True
+
+
 async def set_verify_ephemeral(interaction: Interaction, payload) -> None:
     """Keep verification on a single message (no log dumps).
 
@@ -130,8 +155,11 @@ async def set_verify_ephemeral(interaction: Interaction, payload) -> None:
             await interaction.followup.send(view=payload, ephemeral=True)
         else:
             await interaction.followup.send(embed=payload, ephemeral=True)
-    except Exception:
-        log.exception("could not send verify message")
+    except Exception as exc:
+        # 10015 / NotFound means the interaction token expired; anything else is
+        # a permissions problem. Either way a DM still reaches the user.
+        log.warning("could not update the verify message (%s) - falling back to DM", exc)
+        await _dm_result(interaction, payload)
 
 
 def _cfg_claims_enabled() -> bool:

@@ -249,6 +249,15 @@ are behind must be able to fast-forward.
   first: token, guild/channel ids, `enabled_commands`, `claims.claim_role_id`.
 - **Mail does not arrive** - the default provider is mail.tm; confirm `mail.provider`,
   the mail.tm settings and any webhook/OTP bridge values.
+- **Mail webhook says 404 `Unknown Webhook`** - the webhook in
+  `mail.discord_webhook_all` / `discord_webhook_otp` was deleted. The bot checks it
+  once at startup, warns in the console, and posts mail to `discord.logs_channel`
+  instead. Create a new webhook in the channel and paste its URL into the config.
+- **"Unknown Integration" on an old verify or mail card** - that is Discord telling
+  you the component's interaction is no longer valid (expired token or a bot
+  restart). Mail cards now carry persistent buttons and the verify result falls back
+  to a DM, so both keep working; older messages posted before this update still need
+  to be re-sent with the command.
 - **Ban checks always fail** - `npm install` in `minecraft/ban_check` (Node.js 18+).
 - **Updater: "not a git checkout"** - download with `git clone`, not a ZIP; the updater
   needs `.git`. **"could not be applied cleanly"** - local edits conflict with the

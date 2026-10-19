@@ -19,6 +19,7 @@ log = logging.getLogger(__name__)
 async def start_mail() -> None:
     """Start inbound mail handling for the configured provider."""
     from database.database import DBConnection
+    from mail.discord_forward import validate_webhooks
     from mail.poller import start_poller
 
     # The poller reads security_emails/provider columns — make sure the schema
@@ -28,6 +29,14 @@ async def start_mail() -> None:
             db.setup_tables()
     except Exception:
         log.exception("mail: schema setup failed")
+
+    # A webhook that was deleted answers 404 Unknown Webhook forever. Check it
+    # once so the log says exactly what to fix instead of failing quietly on
+    # every email, and remember it is dead for the rest of the process.
+    try:
+        await validate_webhooks()
+    except Exception:
+        log.warning("mail: webhook check failed", exc_info=True)
 
     start_poller()
 

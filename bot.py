@@ -13,6 +13,7 @@ from ui.buttons.link_account import LinkAccountView
 from ui.buttons.create_ticket import CreateTicketView
 from database.database import DBConnection
 from mail import start_mail, stop_mail
+from mail.discord_forward import set_client as set_mail_client
 from ui.buttons.claim_button import ClaimPersistentView
 
 # Every config path in this project is relative to the repo root, so pin the
@@ -216,7 +217,10 @@ class DiscordBot(commands.Bot):
 
         bot_logger = logging.getLogger("bot")
         bot_logger.addHandler(console_handler)
-        bot_logger.propagate = False
+        # Keep propagating: the root file handler then records bot INFO lines in
+        # logs/securing.log as well, so the file is a complete history instead of
+        # module messages only.
+        bot_logger.propagate = True
 
         for name in ("discord", "discord.http", "discord.gateway", "httpx", "mail.log"):
             logging.getLogger(name).setLevel(logging.WARNING)
@@ -360,6 +364,10 @@ async def main():
     async with bot:
         bot.remove_command("help")
         bot.setup_logging()
+
+        # Mail forwarding falls back to the logs channel when a Discord webhook
+        # was deleted, so the forwarder needs the client before the poller runs.
+        set_mail_client(bot)
 
         # Inbound mail: mail.tm polling by default, local SMTP only when
         # mail.provider is "local" (own domain + MX). A mail failure must not

@@ -1,4 +1,5 @@
 from ui.buttons.mail_inbox import get_inbox
+from shared.email_view import InboxView
 
 from database.database import DBConnection
 from mail import mailtm
@@ -26,19 +27,27 @@ PROVIDER_LABEL = {
 
 
 class MailListView(discord.ui.View):
+    """``/email list`` pagination.
+
+    The buttons are persistent (fixed custom ids) and the page is read back from
+    the card, so pressing ◀/▶ on an older list card still works after a restart
+    instead of answering with Discord's "Unknown Integration".
+    """
+
     size = 10
 
-    def __init__(self, emails: list, page: int = 0):
-        super().__init__(timeout=120)
-        self.emails = emails
+    def __init__(self, emails: list | None = None, page: int = 0):
+        super().__init__(timeout=None)
+        self.emails = emails or []
         self.page = page
-        self.total_pages = max(1, (len(emails) + self.size - 1) // self.size)
+        self.total_pages = max(1, (len(self.emails) + self.size - 1) // self.size)
 
         previous_button = discord.ui.Button(
             label="◀",
             style=discord.ButtonStyle.secondary,
             disabled=(page == 0),
-            row=0
+            row=0,
+            custom_id="persistent:mail_list_prev",
         )
         previous_button.callback = self.previous
         self.add_item(previous_button)
@@ -47,14 +56,18 @@ class MailListView(discord.ui.View):
             label=f"{page + 1} / {self.total_pages}",
             style=discord.ButtonStyle.primary,
             disabled=True,
-            row=0
+            row=0,
+            # Persistent views need a custom_id on every item, even a disabled
+            # page label (this one is read back to know which page to show).
+            custom_id="persistent:mail_list_page",
         ))
 
         next_button = discord.ui.Button(
             label="▶",
             style=discord.ButtonStyle.secondary,
             disabled=(page >= self.total_pages - 1),
-            row=0
+            row=0,
+            custom_id="persistent:mail_list_next",
         )
         next_button.callback = self.next
         self.add_item(next_button)
@@ -62,22 +75,50 @@ class MailListView(discord.ui.View):
     def build_embed(self) -> discord.Embed:
         start = self.page * self.size
         chunk = self.emails[start:start + self.size]
-        lines = "\n".join(f"`{start + i + 1}.` {e[0]}" for i, e in enumerate(chunk))
-        embed = discord.Embed(
-            title="Security Emails",
-            description=f"**{len(self.emails)}** email(s) stored:\n\n{lines}",
-            color=0x3B89FF
-        )
+        if not self.emails:
+            embed = discord.Embed(
+                title="Security Emails",
+                description="No emails stored. Try `/email new`.",
+                color=0x3B89FF,
+            )
+        else:
+            lines = "\n".join(f"`{start + i + 1}.` {e[0]}" for i, e in enumerate(chunk))
+            embed = discord.Embed(
+                title="Security Emails",
+                description=f"**{len(self.emails)}** email(s) stored:\n\n{lines}",
+                color=0x3B89FF,
+            )
         footer = "mail.tm inboxes are polled live · mail is kept 7 days"
         return embed.set_footer(text=footer)
 
-    async def previous(self, interaction: discord.Interaction):
-        view = MailListView(self.emails, self.page - 1)
+    def _page_from_message(self, interaction: discord.Interaction) -> int:
+        """Read the current page from the "3 / 7" label on the card."""
+        try:
+            label = interaction.message.components[0].children[1].label
+            return max(0, int(str(label).split("/")[0].strip()) - 1)
+        except Exception:
+            return self.page
+
+    async def _reload(self, interaction: discord.Interaction, delta: int) -> None:
+        with DBConnection() as database:
+            emails = list(database.get_security_emails())
+
+        if not emails:
+            await interaction.response.send_message(
+                "No emails stored. Try `/email new`.", ephemeral=True
+            )
+            return
+
+        total_pages = max(1, (len(emails) + self.size - 1) // self.size)
+        page = max(0, min(self._page_from_message(interaction) + delta, total_pages - 1))
+        view = MailListView(emails, page)
         await interaction.response.edit_message(embed=view.build_embed(), view=view)
 
+    async def previous(self, interaction: discord.Interaction):
+        await self._reload(interaction, -1)
+
     async def next(self, interaction: discord.Interaction):
-        view = MailListView(self.emails, self.page + 1)
-        await interaction.response.edit_message(embed=view.build_embed(), view=view)
+        await self._reload(interaction, 1)
 
 
 class Email(commands.Cog):
@@ -286,3 +327,6 @@ class Email(commands.Cog):
 
 def setup(bot: commands.Bot) -> None:
     bot.add_cog(Email(bot))
+    # Persistent components for mail cards posted before a restart.
+    bot.add_view(MailListView())
+    bot.add_view(InboxView())
