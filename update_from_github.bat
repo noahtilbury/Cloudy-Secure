@@ -258,7 +258,7 @@ echo  the new code is loaded.
 goto end_summary
 :no_bot_running
 echo  Start the bot with:
-echo      start.ps1
+echo      start.bat
 echo  or  .venv\Scripts\python.exe bot.py
 :end_summary
 echo ============================================================

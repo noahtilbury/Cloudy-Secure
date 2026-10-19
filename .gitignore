@@ -16,7 +16,6 @@ eggs/
 .eggs/
 lib/
 lib64/
-!web/src/lib/
 parts/
 sdist/
 var/
@@ -323,13 +322,6 @@ pids/
 Thumbs.db
 *.swp
 *~
-
-# Web build output & deps
-web/.output/
-web/node_modules/
-web/.tanstack/
-web/.vite/
-web/dist/
 
 # sunnysecure additions
 .freebuff/
