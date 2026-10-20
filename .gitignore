@@ -368,3 +368,6 @@ zip-buyers/
 # Stray key/token files (never commit)
 keys.txt
 *_keys.txt
+
+# Stray test artifacts created by a Windows-illegal "C:\tmp\..." path join
+C:*/
