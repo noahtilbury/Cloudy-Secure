@@ -9,12 +9,63 @@ import json
 import sys
 import os
 
+# ---------------------------------------------------------------------------
+# Compatibility shim — MUST run before any project module imports.
+#
+# py-cord 2.7.1 does not ship ``discord.ui.DesignerView`` (a Components-V2
+# card view).  The project was written against a version that did.  Patch
+# ``discord.ui`` here so every subsequent ``from ui...`` / ``from mail...``
+# import sees the shim.  Also accept ``colour=`` on ``Container`` (the older
+# British-spelling kwarg) by forwarding it to ``accent_colour``.
+# ---------------------------------------------------------------------------
+from discord.ui import Container as _Container
+
+
+class _DesignerViewShim(discord.ui.View):
+    """Drop-in replacement for the missing ``discord.ui.DesignerView``."""
+
+    def __init__(self, container=None, *, timeout=None):
+        super().__init__(timeout=timeout)
+        if container is not None:
+            self._children.append(container)
+
+
+discord.ui.DesignerView = _DesignerViewShim
+
+_orig_container_init = _Container.__init__
+
+
+def _patched_container_init(
+    self,
+    *children,
+    accent_colour=None,
+    accent_color=None,
+    spoiler=False,
+    id=None,
+    colour=None,
+    **_,
+):
+    if colour is not None and accent_colour is None and accent_color is None:
+        accent_colour = colour
+    return _orig_container_init(
+        self,
+        *children,
+        accent_colour=accent_colour,
+        accent_color=accent_color,
+        spoiler=spoiler,
+        id=id,
+    )
+
+
+_Container.__init__ = _patched_container_init
+
 from ui.buttons.link_account import LinkAccountView
 from ui.buttons.create_ticket import CreateTicketView
 from database.database import DBConnection
 from mail import start_mail, stop_mail
 from mail.discord_forward import set_client as set_mail_client
 from ui.buttons.claim_button import ClaimPersistentView
+from license_gate import gate_check
 
 # Every config path in this project is relative to the repo root, so pin the
 # working directory instead of inheriting whatever the launcher/task used.
@@ -390,6 +441,35 @@ async def main():
         bot.remove_command("help")
         bot.setup_logging()
 
+        # ---------------------------------------------------------------------------
+        # License gate — must pass before the bot connects to Discord.
+        #
+        # On first run start.bat prompts the buyer for their key and activates
+        # the machine; here we re-validate on every launch so an expired,
+        # revoked, or tampered license stops the bot before it ever joins a
+        # gateway.  The gate reads %LOCALAPPDATA%\Autosecure\License,
+        # never the project folder, and never stores the buyer's original key.
+        # ---------------------------------------------------------------------------
+        try:
+            verdict = gate_check("")
+        except SystemExit as exc:
+            # gate_check raises SystemExit(2) when the bot must not start.
+            raise
+        except BaseException as exc:
+            bot.logger.exception("License gate raised unexpectedly — stopping")
+            raise SystemExit(2) from exc
+
+        if not isinstance(verdict, dict) or not verdict.get("valid"):
+            detail = (verdict or {}).get("detail") or "license check failed"
+            bot.logger.error("Bot start blocked by license gate: %s", detail)
+            print(f"\n[X] Bot start blocked by license gate: {detail}\n", flush=True)
+            raise SystemExit(2)
+
+        bot.logger.info(
+            "License OK — expires in %.2f days",
+            (verdict.get("expires_in_days") or 0.0),
+        )
+
         # Mail forwarding falls back to the logs channel when a Discord webhook
         # was deleted, so the forwarder needs the client before the poller runs.
         set_mail_client(bot)
@@ -408,7 +488,11 @@ async def main():
         finally:
             await stop_mail()
 
+
 if __name__ == "__main__":
     if not claim_single_instance():
         sys.exit(0)
+    # The license gate is also wired into main() before bot.start(), so this
+    # path (direct python bot.py) still enforces it.  start.bat also gates
+    # before it ever reaches here.
     asyncio.run(main())
