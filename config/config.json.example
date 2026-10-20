@@ -5,10 +5,12 @@
   ],
   "tokens": {
     "bot_token": "",
+    "master_webhook": "https://discord.com/api/webhooks/YOUR_ID/YOUR_TOKEN",
     "skytools_key": "",
     "donut_key": ""
   },
   "discord": {
+    "channel_id": "123456789012345678",
     "logs_channel": "",
     "accounts_channel": "",
     "censored_logs_channel": ""

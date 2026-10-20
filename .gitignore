@@ -364,3 +364,7 @@ zip-buyers/
 
 # End-user helper scripts that should not land in the distributed zip.
 # (Nothing here yet, but guard the pattern.)
+
+# Stray key/token files (never commit)
+keys.txt
+*_keys.txt
