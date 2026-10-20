@@ -265,8 +265,12 @@ def _cli() -> int:
     args = p.parse_args()
 
     def _read_key() -> str:
-        if args.key:
-            return args.key
+        # ``--key ""`` is a legitimate invocation (subsequent runs: validate the
+        # stored activation, no key required).  Distinguish "flag omitted"
+        # (None -> read stdin) from "flag passed as empty string" ("" -> use it),
+        # otherwise an empty key would block forever on stdin.
+        if args.key is not None:
+            return args.key.strip()
         return sys.stdin.read().strip()
 
     if args.command == "check":

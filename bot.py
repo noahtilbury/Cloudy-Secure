@@ -65,7 +65,7 @@ from database.database import DBConnection
 from mail import start_mail, stop_mail
 from mail.discord_forward import set_client as set_mail_client
 from ui.buttons.claim_button import ClaimPersistentView
-from license_gate import gate_check
+from license_gate import GateError, gate_check
 
 # Every config path in this project is relative to the repo root, so pin the
 # working directory instead of inheriting whatever the launcher/task used.
@@ -452,8 +452,12 @@ async def main():
         # ---------------------------------------------------------------------------
         try:
             verdict = gate_check("")
-        except SystemExit as exc:
-            # gate_check raises SystemExit(2) when the bot must not start.
+        except GateError as exc:
+            # Normal denial: not activated, expired, revoked, or tampered.
+            bot.logger.error("Bot start blocked by license gate")
+            print(f"\n[X] Bot start blocked by license gate:\n{exc}\n", flush=True)
+            raise SystemExit(2) from exc
+        except SystemExit:
             raise
         except BaseException as exc:
             bot.logger.exception("License gate raised unexpectedly — stopping")
