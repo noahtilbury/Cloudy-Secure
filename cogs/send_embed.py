@@ -5,8 +5,10 @@ from discord.ext import commands
 import discord
 import json
 
-bot_config = json.load(open("config/bot.json", "r"))
-name = bot_config["enabled_commands"]["aliases"]["send_embed"]
+from shared.settings import command_alias
+from shared.interactions import followup
+
+name = command_alias("send_embed")
 
 
 class sendEmbed(commands.Cog):
@@ -44,7 +46,7 @@ class sendEmbed(commands.Cog):
         else:
             await ctx.channel.send(view=LinkAccountView())
 
-        await ctx.followup.send("Sent!", ephemeral=True)
+        await followup(ctx, "Sent!", ephemeral=True)
 
 
 def setup(bot: commands.Bot) -> None:

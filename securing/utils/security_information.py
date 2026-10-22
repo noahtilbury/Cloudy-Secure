@@ -927,6 +927,8 @@ async def _bridge_to_proofs(
     password_attempted = False
     password = _clean_password(password)
 
+    from securing.auth.polish_host import _login_form
+
     for hop in range(_MAX_BRIDGE_HOPS):
         if _find_t0(current) and not _is_ms_error_page(current, current_url):
             logging.info(
@@ -994,6 +996,21 @@ async def _bridge_to_proofs(
                     "t": sso["t"],
                 },
             )
+            current, current_url, current_status = resp.text, str(resp.url), resp.status_code
+            continue
+
+        # Classic (non-MSAL) continuation form: ppsecure/post.srf carrying
+        # login / resp / PPFT / wreply / t. Posting it is what turns an
+        # accepted OTP into a signed-in session (WLSSC) — without it the
+        # proofs page keeps answering with the sign-in page.
+        classic = _login_form(current)
+        if classic and classic[1].get("resp"):
+            classic_action, classic_fields = classic
+            logging.info(
+                "security_information: posting classic continuation form action=%s",
+                classic_action[:240],
+            )
+            resp = await _post_form(session, classic_action, classic_fields)
             current, current_url, current_status = resp.text, str(resp.url), resp.status_code
             continue
 

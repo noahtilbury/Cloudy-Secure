@@ -1,12 +1,12 @@
 @echo off
 setlocal EnableExtensions DisableDelayedExpansion
 
-title sunnysecure - update from GitHub
+title Cloudy Secure - update from GitHub
 
 :: The repository this project is published from. Every clone/remote hint below
 :: uses it, so moving the project only needs changing these two lines.
-set "REPO_URL=https://github.com/noahtilbury/Discord-Minecraft-AutoSecure.git"
-set "REPO_SHORT=noahtilbury/Discord-Minecraft-AutoSecure"
+set "REPO_URL=https://github.com/noahtilbury/Cloudy-Secure.git"
+set "REPO_SHORT=noahtilbury/Cloudy-Secure"
 set "REPO_OWNER=noahtilbury"
 
 :: SHIFT also overwrites %0, so capture the script folder before parsing args.
@@ -32,7 +32,7 @@ goto parse_args
 :args_done
 
 echo ============================================================
-echo  sunnysecure - GitHub updater
+echo  Cloudy Secure - GitHub updater
 echo  folder: %REPO_ROOT%
 echo ============================================================
 echo.
@@ -92,7 +92,7 @@ echo       origin:  %REMOTE_URL%
 :: this project, so offer to repoint it before fetching.
 :: ---------------------------------------------------------------------------
 echo %REMOTE_URL% | findstr /I /C:"waitno01/sunnysecure" >nul
-if errorlevel 1 goto origin_ok
+if errorlevel 1 goto check_old_slug
 echo.
 echo [WARN] This folder tracks waitno01/sunnysecure, not where this project is
 echo        published. New versions come from %REPO_SHORT%.
@@ -111,6 +111,19 @@ if errorlevel 1 (
 )
 set "REMOTE_URL=%REPO_URL%"
 echo        [OK] origin is now %REPO_SHORT%.
+
+:: ---------------------------------------------------------------------------
+:: The project was renamed from Discord-Minecraft-AutoSecure to Cloudy-Secure.
+:: GitHub redirects the old address, so such a copy still updates fine; this
+:: only tells the user where the project lives now.
+:: ---------------------------------------------------------------------------
+:check_old_slug
+echo %REMOTE_URL% | findstr /I /C:"Discord-Minecraft-AutoSecure" >nul
+if errorlevel 1 goto origin_ok
+echo.
+echo [NOTE] This folder still uses the old repository name. The project now
+echo        lives at %REPO_SHORT%.
+echo        (GitHub redirects the old address, so the update still works.)
 :origin_ok
 
 :: ---------------------------------------------------------------------------

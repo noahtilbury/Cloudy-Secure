@@ -4,16 +4,15 @@ Reproduces everything the bot does up to (and including) the line that used
 to crash in ``on_ready`` — WITHOUT connecting to Discord:
 
   * imports bot.py (config load, compat shim, DiscordBot construction)
-  * runs the license gate verdict
   * loads every cog
   * adds the three persistent views (LinkAccountView is the exact crash site)
   * builds every Components-V2 card in ui/theme.py
 
 Run:  ./.venv/Scripts/python.exe smoketest_startup.py
 
-Exit code 0 means the whole start-up path is clean: the config loads, the
-license gate passes, every cog loads, the persistent views register and every
-Components-V2 card builds.  It never connects to Discord.
+Exit code 0 means the whole start-up path is clean: the config loads, every cog
+loads, the persistent views register and every Components-V2 card builds.  It
+never connects to Discord.
 """
 
 import asyncio
@@ -28,28 +27,14 @@ async def main() -> int:
 
     print("[ok] bot.py imported (config + shim + DiscordBot built)")
 
-    # 1. License gate
-    try:
-        verdict = b.gate_check("")
-    except Exception as exc:  # noqa: BLE001
-        print(f"[FAIL] license gate raised: {exc!r}")
-        return 1
-    if not isinstance(verdict, dict) or not verdict.get("valid"):
-        print(f"[FAIL] license gate denied: {verdict}")
-        return 1
-    print(
-        "[ok] license gate passed (expires in %.2f days)"
-        % (verdict.get("expires_in_days") or 0.0)
-    )
-
-    # 2. Every cog
+    # 1. Every cog
     await b.bot.load_cogs()
     loaded = sorted(
         getattr(cog, "qualified_name", str(cog)) for cog in b.bot.cogs.values()
     )
     print(f"[ok] cogs loaded: {', '.join(loaded)}")
 
-    # 3. The exact three lines that used to raise
+    # 2. The exact three lines that used to raise
     #    TypeError: Container.__init__() got an unexpected keyword argument
     #    'accent_colour'
     from ui.buttons.claim_button import ClaimPersistentView
@@ -61,7 +46,7 @@ async def main() -> int:
     b.bot.add_view(ClaimPersistentView())
     print("[ok] persistent views registered (LinkAccountView no longer crashes)")
 
-    # 4. Every Components-V2 card builder
+    # 3. Every Components-V2 card builder
     import ui.theme as theme
 
     async def cb(_interaction):  # noqa: ANN001
@@ -83,7 +68,7 @@ async def main() -> int:
     for name in cards:
         print(f"[ok] card built: {name}")
 
-    print("\nSMOKE TEST PASSED — startup path is clean on py-cord", __import__("discord").__version__)
+    print("\nSMOKE TEST PASSED — startup path is clean on py-Cord", __import__("discord").__version__)
     return 0
 
 

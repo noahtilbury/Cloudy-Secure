@@ -200,13 +200,23 @@ class DBConnection:
         self.conn.commit()
 
     def get_email_password(self, email: str) -> str | None:
-        password = self.cursor.execute("""
+        """Stored password for a mailbox, or None.
+
+        ``fetchone()`` returns the whole row (``('pw',)``), not the column, so
+        the value has to be unwrapped here.  Returning the row tuple made the
+        temporary-password field show ``('iRXurXiBTpUyCX',)`` instead of the
+        password itself.
+        """
+        row = self.cursor.execute("""
             SELECT password FROM `security_emails`
-            WHERE email = ?
-        """, (email,)
+            WHERE lower(email) = lower(?)
+        """, (str(email or ""),)
         ).fetchone()
 
-        return password
+        if row is None:
+            return None
+        value = row[0]
+        return None if value is None else str(value)
 
     def get_security_emails(self) -> tuple:
         emails = self.cursor.execute("""

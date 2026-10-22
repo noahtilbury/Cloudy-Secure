@@ -1,6 +1,7 @@
-# 2.8+ ships discord.ui.DesignerView natively and spells the container
-# accent `colour=` (2.7.x only accepts `accent_colour=`).
-py-cord>=2.8,<3
+# 2.7+ ships the Components-V2 API the cards are built on
+# (discord.ui.Container / Section / TextDisplay / DesignerView / DesignerModal).
+# 2.6 and older have none of it, so the bot would crash on import there.
+py-cord>=2.7,<3
 httpx>=0.27
 httpcore>=1.0
 requests>=2.31

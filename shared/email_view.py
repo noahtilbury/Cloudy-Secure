@@ -12,6 +12,9 @@ import re
 import discord
 from discord import ui
 
+from shared import interactions
+
+
 FOOTER_PREFIX = "inbox:"
 _TITLE_RE = re.compile(r"\((\d+)\s*/\s*(\d+)\)")
 
@@ -74,7 +77,7 @@ class emailView(ui.View):
 
         identifier, index = self._state_from_message(interaction)
         if not identifier:
-            await interaction.response.send_message(
+            await interactions.respond(interaction,
                 "This inbox card is out of date — run `/email inbox` again.",
                 ephemeral=True,
             )
@@ -84,7 +87,7 @@ class emailView(ui.View):
             emails = await fetchInbox(identifier)
         except Exception:
             log.exception("inbox view: refresh failed for %s", identifier)
-            await interaction.response.send_message(
+            await interactions.respond(interaction,
                 "Could not refresh this inbox, please try again.", ephemeral=True
             )
             return
@@ -95,7 +98,7 @@ class emailView(ui.View):
             index = 0
 
         view = emailView(emails, identifier, index)
-        await interaction.response.edit_message(embed=view.getEmbed(), view=view)
+        await interactions.edit(interaction, embed=view.getEmbed(), view=view)
 
     @ui.button(
         label="◀️ Back",

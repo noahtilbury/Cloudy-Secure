@@ -3,11 +3,12 @@ from securing.auth.send_auth import send_auth
 from discord.ext import commands
 import discord
 import httpx
-import json
 import logging
 
-bot_config = json.load(open("config/bot.json", "r"))
-name = bot_config["enabled_commands"]["aliases"]["request_otp"]
+from shared.settings import command_alias
+from shared.interactions import followup
+
+name = command_alias("request_otp")
 
 log = logging.getLogger("bot")
 
@@ -30,7 +31,7 @@ class requestOTP(commands.Cog):
                 response = await send_auth(session, email)
         except Exception:
             log.exception("request_otp failed for %s", email)
-            await ctx.followup.send(
+            await followup(ctx, 
                 embed=discord.Embed(
                     description="GetCredentialType failed (proxy/tunnel error). Try again.",
                     color=0xFF0000,
@@ -43,7 +44,7 @@ class requestOTP(commands.Cog):
         proofs = (credentials or {}).get("OtcLoginEligibleProofs") or []
 
         if not proofs:
-            await ctx.followup.send(
+            await followup(ctx, 
                 embed=discord.Embed(
                     description="Failed to send OTP, no eligible proofs found.",
                     color=0xFF0000,
@@ -62,7 +63,7 @@ class requestOTP(commands.Cog):
             or "?"
         )
         if (response or {}).get("otc_sent") is False:
-            await ctx.followup.send(
+            await followup(ctx, 
                 embed=discord.Embed(
                     description=(
                         f"Microsoft refused to send a code to `{destination}` "
@@ -75,7 +76,7 @@ class requestOTP(commands.Cog):
             )
             return
 
-        await ctx.followup.send(
+        await followup(ctx, 
             embed=discord.Embed(
                 description=f"Successfully sent OTP to `{destination}`",
                 color=0x3B89FF,

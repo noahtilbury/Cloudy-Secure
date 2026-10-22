@@ -1002,6 +1002,7 @@ async def _follow_post_auth_forms(session: httpx.AsyncClient, text: str, url: st
         _object_moved_href,
         _page_id,
     )
+    from securing.auth.polish_host import _login_form
 
     current = text or ""
     current_url = url or ""
@@ -1044,6 +1045,19 @@ async def _follow_post_auth_forms(session: httpx.AsyncClient, text: str, url: st
                     "ANON": sso["ANON"],
                     "t": sso["t"],
                 },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                follow_redirects=True,
+            )
+            current, current_url = r.text or "", str(r.url)
+            continue
+        # Classic (non-MSAL) continuation form: ppsecure/post.srf carrying
+        # login / resp / PPFT / wreply / t. Posting it is what turns an
+        # accepted OTP into a signed-in session (WLSSC).
+        classic = _login_form(current)
+        if classic and classic[1].get("resp"):
+            r = await session.post(
+                classic[0],
+                data=classic[1],
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 follow_redirects=True,
             )

@@ -2,8 +2,9 @@ from discord.ext import commands
 import discord
 import json
 
-bot_config = json.load(open("config/bot.json", "r"))
-name = bot_config["enabled_commands"]["aliases"]["set_channel"]
+from shared.settings import command_alias
+
+name = command_alias("set_channel")
 
 class setChannel(commands.Cog):
     def __init__(self, bot):

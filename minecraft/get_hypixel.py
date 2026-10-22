@@ -1,10 +1,25 @@
 import httpx
 import json
+from pathlib import Path
 
-config = json.load(open("config/config.json", "r"))
-skytools_key = config["tokens"]["skytools_key"]
+_CONFIG = Path(__file__).resolve().parents[1] / "config" / "config.json"
+
+
+def _skytools_key() -> str:
+    """The optional skytools.app API key.
+
+    The key is optional: without it the stats commands simply report "no
+    stats", so a missing key must not stop the module (and with it the
+    ``/secure`` and ``/mcstats`` commands) from loading at all.
+    """
+    try:
+        return str(json.loads(_CONFIG.read_text()).get("tokens", {}).get("skytools_key") or "").strip()
+    except Exception:
+        return ""
 
 async def get_hypixel_stats(username: str) -> dict:
+
+    skytools_key = _skytools_key()
 
     result = {
         "exists": bool(skytools_key),

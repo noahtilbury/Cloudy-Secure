@@ -4,8 +4,10 @@ import json
 
 from securing.auth.check_locked import check_locked
 
-config = json.load(open("config/bot.json", "r"))
-name = config["enabled_commands"]["aliases"]["check_lock"]
+from shared.interactions import followup
+from shared.settings import command_alias
+
+name = command_alias("check_lock")
 
 class checkLock(commands.Cog):
     check = discord.SlashCommandGroup(name)
@@ -37,19 +39,19 @@ class checkLock(commands.Cog):
                         is_phone_locked = status["isPhoneLocked"]
 
                         if is_suspended:
-                            await ctx.followup.send(f"This email is **suspended/locked**", ephemeral=True)
+                            await followup(ctx, "This email is **suspended/locked**", ephemeral=True)
                         elif is_phone_locked:
-                            await ctx.followup.send(f"This email is **phone locked** (requires phone verification to unlock)", ephemeral=True)
+                            await followup(ctx, "This email is **phone locked** (requires phone verification to unlock)", ephemeral=True)
                         else:
-                            await ctx.followup.send(f"This email is **not** locked", ephemeral=True)
+                            await followup(ctx, "This email is **not** locked", ephemeral=True)
                         return
-                    except Exception as e:
-                        await ctx.followup.send(f"Failed to check if account is locked, try again.", ephemeral=True)
+                    except Exception:
+                        await followup(ctx, "Failed to check if account is locked, try again.", ephemeral=True)
 
-                await ctx.followup.send(f"This email is **locked**", ephemeral=True)
+                await followup(ctx, "This email is **locked**", ephemeral=True)
                 return
 
-        await ctx.followup.send(f"Failed to check if this email is locked", ephemeral=True)
+        await followup(ctx, "Failed to check if this email is locked", ephemeral=True)
 
 def setup(bot: commands.Bot) -> None:
     bot.add_cog(checkLock(bot))

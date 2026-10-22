@@ -240,7 +240,7 @@ def resolve_display_inbox(display: str | None) -> str | None:
     """Map Microsoft's masked proof display to a real mailbox of ours.
 
     ``GetCredentialType`` reports the OTC destination masked --
-    ``jb*****@maxxspace.com`` for ``jbii27iha1t2@maxxspace.com``. When the OTC
+    ``jb*****@example.com`` for ``jbii27iha1t2@example.com``. When the OTC
     is requested to a proof we cannot read, the code never shows up in the
     inbox we poll and the whole 2-step flow times out with "no code arrived".
     """

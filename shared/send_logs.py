@@ -104,10 +104,15 @@ async def send_logs(bot: Client, embed: Embed = None, view=None, content: str = 
     """Post to the logs channel (plus a censored copy). Never raises."""
     try:
         config = json.load(open("config/config.json", "r"))
-        logs_channel_id = config["discord"]["logs_channel"]
-        censored_logs_channel_id = config["discord"]["censored_logs_channel"]
+        discord_config = config.get("discord") or {}
+        logs_channel_id = discord_config.get("logs_channel")
+        censored_logs_channel_id = discord_config.get("censored_logs_channel")
     except Exception:
         log.warning("send_logs: discord channel config unreadable", exc_info=True)
+        return False
+
+    if not logs_channel_id:
+        log.warning("send_logs: no discord.logs_channel configured")
         return False
 
     sent = False

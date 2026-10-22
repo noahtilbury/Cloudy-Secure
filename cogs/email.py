@@ -15,9 +15,12 @@ import discord
 import json
 import logging
 
+from shared import interactions
+
 config = json.load(open("config/config.json", "r"))
-bot_config = json.load(open("config/bot.json", "r"))
-name = bot_config["enabled_commands"]["aliases"]["email"]
+from shared.settings import command_alias
+
+name = command_alias("email")
 
 log = logging.getLogger(__name__)
 
@@ -104,7 +107,7 @@ class MailListView(discord.ui.View):
             emails = list(database.get_security_emails())
 
         if not emails:
-            await interaction.response.send_message(
+            await interactions.respond(interaction,
                 "No emails stored. Try `/email new`.", ephemeral=True
             )
             return
@@ -112,7 +115,7 @@ class MailListView(discord.ui.View):
         total_pages = max(1, (len(emails) + self.size - 1) // self.size)
         page = max(0, min(self._page_from_message(interaction) + delta, total_pages - 1))
         view = MailListView(emails, page)
-        await interaction.response.edit_message(embed=view.build_embed(), view=view)
+        await interactions.edit(interaction, embed=view.build_embed(), view=view)
 
     async def previous(self, interaction: discord.Interaction):
         await self._reload(interaction, -1)
@@ -136,7 +139,7 @@ class Email(commands.Cog):
             await ctx.respond("You do not have permission to execute this command!", ephemeral=True)
             return
 
-        await ctx.response.defer(ephemeral=True)
+        await interactions.defer(ctx, ephemeral=True)
 
         try:
             mailbox = await create_security_email(local_part=alias)
@@ -174,7 +177,7 @@ class Email(commands.Cog):
             await ctx.respond("You do not have permission to execute this command!", ephemeral=True)
             return
 
-        await ctx.response.defer(ephemeral=True)
+        await interactions.defer(ctx, ephemeral=True)
         inbox = await get_inbox(email)
 
         if not inbox:
@@ -222,7 +225,7 @@ class Email(commands.Cog):
             await ctx.respond("You do not have permission to execute this command!", ephemeral=True)
             return
 
-        await ctx.response.defer(ephemeral=True)
+        await interactions.defer(ctx, ephemeral=True)
         await delete_security_email(email)
 
         await ctx.respond(
@@ -240,7 +243,7 @@ class Email(commands.Cog):
             await ctx.respond("You do not have permission to execute this command!", ephemeral=True)
             return
 
-        await ctx.response.defer(ephemeral=True)
+        await interactions.defer(ctx, ephemeral=True)
 
         try:
             domains = await mailtm.list_domains()
@@ -271,7 +274,7 @@ class Email(commands.Cog):
             await ctx.respond("You do not have permission to execute this command!", ephemeral=True)
             return
 
-        await ctx.response.defer(ephemeral=True)
+        await interactions.defer(ctx, ephemeral=True)
 
         mailbox = mailbox_login(email)
         if not mailbox:

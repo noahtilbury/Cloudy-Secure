@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Create the config from the examples
+        run: |
+          cp config/config.json.example config/config.json
+          cp config/bot.json.example config/bot.json
+          python -c "import json; p='config/config.json'; d=json.load(open(p)); d.setdefault('tokens', {})['bot_token'] = 'CI_PLACEHOLDER_TOKEN_NOT_A_REAL_TOKEN'; json.dump(d, open(p, 'w'), indent=2)"
+
+      - name: Byte-compile every module
+        run: python -m compileall -q .
+
+      - name: Startup smoke test
+        run: python smoketest_startup.py
+
+      - name: Import sweep
+        run: python tests/test_imports.py
+
+      - name: Login session checks
+        run: python tests/test_login_session.py
+
+      - name: Discord interaction checks
+        run: python tests/test_interactions.py
+
+      - name: Make sure no secret was committed
+        run: |
+          if git grep -nIE "(MTA[A-Za-z0-9_-]{20,}|[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,})" -- \
+             ':!*.example' ':!*.md' ':!.github/*'; then
+            echo "::error::a Discord token-looking string is committed"
+            exit 1
+          fi
+          if git grep -nIE "https://discord(app)?\.com/api/webhooks/" -- ':!*.md'; then
+            echo "::error::a Discord webhook URL is committed"
+            exit 1
+          fi
+          echo "no secrets found"

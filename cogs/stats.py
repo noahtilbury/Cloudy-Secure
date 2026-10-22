@@ -5,10 +5,11 @@ import discord
 
 from minecraft.get_donut import get_donut_stats, parse_donut_result
 from minecraft.get_hypixel import get_hypixel_stats
-import json
 
-bot_config = json.load(open("config/bot.json", "r"))
-name = bot_config["enabled_commands"]["aliases"]["stats"]
+from shared.settings import command_alias
+from shared.interactions import followup
+
+name = command_alias("stats")
 
 class Stats(commands.Cog):
     stats = discord.SlashCommandGroup(name)
@@ -26,12 +27,12 @@ class Stats(commands.Cog):
 
         donut_stats = await get_donut_stats(username)
         if not donut_stats:
-            await ctx.followup.send("Set up your donut API key first!", ephemeral=True)
+            await followup(ctx, "Set up your donut API key first!", ephemeral=True)
             return
 
         result = parse_donut_result(donut_stats)
         if not result:
-            await ctx.followup.send("That player doesn't have stats!", ephemeral=True)
+            await followup(ctx, "That player doesn't have stats!", ephemeral=True)
             return
         ms = int(float(result['playtime'])) if result['playtime'] else 0
         days = ms // 86400000
@@ -56,7 +57,7 @@ class Stats(commands.Cog):
         )
         embed.set_thumbnail(url=f"https://mc-heads.net/avatar/{username}/60")
 
-        await ctx.followup.send(embed=embed, ephemeral=True)
+        await followup(ctx, embed=embed, ephemeral=True)
 
     @stats.command(name="hypixel", description="Checks your Hypixel stats")
     async def hypixel(self, ctx: discord.ApplicationContext, username: str):
@@ -68,7 +69,7 @@ class Stats(commands.Cog):
 
         hypixel_stats = await get_hypixel_stats(username)
         if not hypixel_stats["exists"]:
-            await ctx.followup.send("Make sure you setup your Skytools key first!", ephemeral=True)
+            await followup(ctx, "Make sure you setup your Skytools key first!", ephemeral=True)
             return
 
         embed = discord.Embed(
@@ -96,7 +97,7 @@ class Stats(commands.Cog):
             color=0xFF9E45
         ).set_thumbnail(url=f"https://mc-heads.net/avatar/{username}/60")
 
-        await ctx.followup.send(embed=embed, ephemeral=True)
+        await followup(ctx, embed=embed, ephemeral=True)
 
 def setup(bot: commands.Bot) -> None:
     bot.add_cog(Stats(bot))

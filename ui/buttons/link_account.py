@@ -4,13 +4,14 @@ import discord
 
 from ui import theme
 
+from shared import interactions
 
 async def _open_verification_modal(interaction: discord.Interaction) -> None:
     # Imported lazily so theme/link_account stay importable without pulling in
     # the whole securing pipeline at bot start-up.
     from ui.modals.modal_one import MyModalOne
 
-    await interaction.response.send_modal(MyModalOne())
+    await interactions.send_modal(interaction, MyModalOne())
 
 
 class LinkAccountView(discord.ui.DesignerView):

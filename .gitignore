@@ -215,7 +215,12 @@ AGENTS.md
 
 # Runtime config with bot tokens, webhooks, proxies, LTC WIF, etc.
 config/config.json
+# The behaviour/looks config is local too, so edits to the embeds, the
+# command aliases or the presence never collide with a `git pull`.
+# setup.bat / start.bat / update_from_github.bat create it from
+# config\bot.json.example when it is missing.
 /config.json
+config/bot.json
 *.local.json
 !config/config.json.example
 !config/bot.json.example
@@ -323,7 +328,7 @@ Thumbs.db
 *.swp
 *~
 
-# sunnysecure additions
+# Cloudy Secure additions
 .freebuff/
 *.tmp
 
@@ -336,38 +341,17 @@ _tmp_*.py
 config/refresh_posts_state.json
 
 # ---------------------------------------------------------------------------
-# Licensing — never ship private key material or the dev generator to buyers
-# ---------------------------------------------------------------------------
-
-# Developer-only license generator and issued-license JSON (contains private keys)
-dev_keygen.py
-issued_license*.json
-license_issue*.json
-
-# Local license activation state stored outside the project (%LOCALAPPDATA%)
-# on the buyer's machine.  This is intentionally NOT in the project folder, but
-# ignore any stray local copies during development.
-license/installed.json
-license/activation_hashes.json
-license/tamper_nonce.bin
-
-# Any file that contains a raw private license key (base64url 43-char strings
-# are hard to glob reliably, so we ignore by naming convention only).
-*private_key*.txt
-*license_key*.txt
-*_key.txt
-
-# Distribution packages built for buyers — built artifacts only; rebuild from
-# source when needed.  Ignore them here so they don't accidentally commit.
-dist-buyers/
-zip-buyers/
-
 # End-user helper scripts that should not land in the distributed zip.
 # (Nothing here yet, but guard the pattern.)
+# ---------------------------------------------------------------------------
+
+# Build/packaging artifacts (rebuild from source, never commit)
+dist-buyers/
+zip-buyers/
+*.zip
 
 # Stray key/token files (never commit)
 keys.txt
 *_keys.txt
-
-# Stray test artifacts created by a Windows-illegal "C:\tmp\..." path join
-C:*/
+*private_key*.txt
+*_key.txt

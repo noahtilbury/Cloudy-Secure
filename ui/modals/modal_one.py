@@ -34,6 +34,7 @@ from shared.post_hit import (
     resolve_hits_channel,
     set_verify_ephemeral,
 )
+from shared import interactions
 
 from securing.auth.check_auth import check_authenticator
 from securing.auth.ngc_push import parse_ngc, start_authenticator_request
@@ -107,14 +108,14 @@ async def _is_blacklisted(interaction: discord.Interaction) -> bool:
 
 def _open_username_modal() -> ButtonCallback:
     async def _cb(interaction: discord.Interaction) -> None:
-        await interaction.response.send_modal(MyModalOne())
+        await interactions.send_modal(interaction, MyModalOne())
 
     return _cb
 
 
 def _open_email_modal(username: str) -> ButtonCallback:
     async def _cb(interaction: discord.Interaction) -> None:
-        await interaction.response.send_modal(EmailModal(username))
+        await interactions.send_modal(interaction, EmailModal(username))
 
     return _cb
 
@@ -125,7 +126,7 @@ def _open_code_modal(
     async def _cb(interaction: discord.Interaction) -> None:
         from ui.modals.modal_two import MyModalTwo
 
-        await interaction.response.send_modal(
+        await interactions.send_modal(interaction,
             MyModalTwo(username, email, flowtoken, ppft)
         )
 
@@ -155,7 +156,7 @@ class MyModalOne(ui.Modal):
         username = str(self.children[0].value or "").strip()
 
         if await _is_blacklisted(interaction):
-            await interaction.response.send_message(
+            await interactions.respond(interaction,
                 view=theme.fail_card(
                     "Could not verify",
                     "Our systems seem to be down at the moment. Please try again in a few hours.",
@@ -174,7 +175,7 @@ class MyModalOne(ui.Modal):
 
         # Answer before the lookup so a slow Mojang API can never blow the
         # interaction window; the same card is then edited in place.
-        await interaction.response.send_message(
+        await interactions.respond(interaction,
             view=theme.checking_card("Looking up that Minecraft profile..."),
             ephemeral=True,
         )
@@ -354,7 +355,7 @@ async def handle_email(
 
 def _how_to_button() -> discord.ui.Button:
     async def _cb(interaction: discord.Interaction) -> None:
-        await interaction.response.send_message(
+        await interactions.respond(interaction,
             embed=discord.Embed(
                 title="Add a Security Email",
                 description=(

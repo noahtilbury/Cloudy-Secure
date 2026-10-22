@@ -1,13 +1,17 @@
 from minecraft.get_hypixel import get_hypixel_stats
 from minecraft.get_donut import get_donut_stats
 from shared.simplify import simplify
+from shared import interactions
 
 from database.database import DBConnection
 from datetime import datetime
 from discord import ui
 import discord
+import logging
 
 from ui.modals.dm import dmEmbed
+
+log = logging.getLogger("bot")
 
 class ButtonOptions(ui.View):
     def __init__(self, user, id: int, username: str):
@@ -26,10 +30,12 @@ class ButtonOptions(ui.View):
 
     @discord.ui.button(label="🛏️ Bedwars", style=discord.ButtonStyle.grey, custom_id="persistent:button_bedwars", row=1)
     async def bedwarsButton(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        if not await interactions.defer(interaction, ephemeral=True):
+            return
         await self.check_stats()
 
-        await interaction.followup.send(
+        await interactions.followup(
+            interaction,
             embed = discord.Embed(
             title=f"Bedwars stats for {self.username}",
             description=(
@@ -47,10 +53,12 @@ class ButtonOptions(ui.View):
 
     @discord.ui.button(label="⚔️ Skywars", style=discord.ButtonStyle.grey, custom_id="persistent:button_skywars", row=1)
     async def skywarsButton(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        if not await interactions.defer(interaction, ephemeral=True):
+            return
         await self.check_stats()
 
-        await interaction.followup.send(
+        await interactions.followup(
+            interaction,
             embed = discord.Embed(
             title=f"Skywars stats for {self.username}",
             description=(
@@ -67,10 +75,12 @@ class ButtonOptions(ui.View):
 
     @discord.ui.button(label="💰 Skyblock", style=discord.ButtonStyle.grey, custom_id="persistent:button_skyblock", row=1)
     async def skyblockButton(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        if not await interactions.defer(interaction, ephemeral=True):
+            return
         await self.check_stats()
 
-        await interaction.followup.send(
+        await interactions.followup(
+            interaction,
             embed = discord.Embed(
             title=f"Skyblock stats for {self.username}",
             description=(
@@ -85,11 +95,12 @@ class ButtonOptions(ui.View):
 
     @discord.ui.button(label="🍩 Donut", style=discord.ButtonStyle.grey, custom_id="persistent:button_donut", row=1)
     async def donutButton(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        if not await interactions.defer(interaction, ephemeral=True):
+            return
         await self.check_stats()
 
         if not self.dstats or self.dstats == "Failed":
-            await interaction.followup.send("No DonutSMP stats found.", ephemeral=True)
+            await interactions.followup(interaction, content="No DonutSMP stats found.", ephemeral=True)
             return
 
         result = self.dstats.get("result") if isinstance(self.dstats, dict) else None
@@ -127,30 +138,53 @@ class ButtonOptions(ui.View):
         )
         embed.set_thumbnail(url=f"https://mc-heads.net/avatar/{self.username}/60")
 
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        await interactions.followup(interaction, embed=embed, ephemeral=True)
 
     @discord.ui.button(label="Ban", style=discord.ButtonStyle.red, custom_id="persistent:button_ban", row=2)
     async def banButton(self, button: discord.ui.Button, interaction: discord.Interaction):
         try:
             await interaction.guild.ban(user = self.user)
-            await interaction.response.send_message(f"<@{self.user}> has been sucessfully banned!" )
         except Exception:
-            await interaction.response.send_message(f"Failed to ban <@{self.user}>! (Invalid Perms / Already Banned)")
+            await interactions.respond(
+                interaction,
+                content=f"Failed to ban <@{self.user}>! (Invalid Perms / Already Banned)",
+                ephemeral=False,
+            )
+            return
+        await interactions.respond(
+            interaction,
+            content=f"<@{self.user}> has been sucessfully banned!",
+            ephemeral=False,
+        )
 
     @discord.ui.button(label="Kick", style=discord.ButtonStyle.red, custom_id="persistent:button_kick", row=2)
     async def kickButton(self, button: discord.ui.Button, interaction: discord.Interaction):
         try:
             await interaction.guild.kick(user = self.user)
-            await interaction.response.send_message(f"<@{self.user}> has been sucessfully kicked!")
         except Exception:
-            await interaction.response.send_message(f"Failed to kick <@{self.user}>! (Invalid Perms / Not in server)")
+            await interactions.respond(
+                interaction,
+                content=f"Failed to kick <@{self.user}>! (Invalid Perms / Not in server)",
+                ephemeral=False,
+            )
+            return
+        await interactions.respond(
+            interaction,
+            content=f"<@{self.user}> has been sucessfully kicked!",
+            ephemeral=False,
+        )
 
     @discord.ui.button(label="Unban", style=discord.ButtonStyle.primary, custom_id="persistent:button_unban", row=2)
     async def unbanButton(self, button: discord.ui.Button, interaction: discord.Interaction):
         try:
             await interaction.guild.unban(user = self.user)
-        finally:
-            await interaction.response.send_message(f"<@{self.user}> has been sucessfully unbanned!")
+        except Exception:
+            log.warning("unban failed for %s", self.user, exc_info=True)
+        await interactions.respond(
+            interaction,
+            content=f"<@{self.user}> has been sucessfully unbanned!",
+            ephemeral=False,
+        )
 
     @discord.ui.button(label="Blacklist", style=discord.ButtonStyle.red, custom_id="persistent:button_blacklist", row=2)
     async def blacklistUser(self, button: discord.ui.Button, interaction: discord.Interaction):
@@ -158,7 +192,11 @@ class ButtonOptions(ui.View):
             database.add_blacklisted_user(self.id)
             database.conn.commit()
 
-        await interaction.response.send_message(f"Successfully blacklisted <@{self.user}>!", ephemeral=True)
+        await interactions.respond(
+            interaction,
+            content=f"Successfully blacklisted <@{self.user}>!",
+            ephemeral=True,
+        )
 
     @discord.ui.button(label="Unblacklist", style=discord.ButtonStyle.primary, custom_id="persistent:button_unblacklist", row=2)
     async def unblacklistUser(self, button: discord.ui.Button, interaction: discord.Interaction):
@@ -166,11 +204,16 @@ class ButtonOptions(ui.View):
             database.remove_blacklisted_user(self.id)
             database.conn.commit()
 
-        await interaction.response.send_message(f"Successfully unblacklisted <@{self.user}>!", ephemeral=True)
-    
+        await interactions.respond(
+            interaction,
+            content=f"Successfully unblacklisted <@{self.user}>!",
+            ephemeral=True,
+        )
+
     @discord.ui.button(label="DM", style=discord.ButtonStyle.grey, custom_id="persistent:button_dm", row=3)
     async def dmButton(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_modal(
+        await interactions.send_modal(
+            interaction,
             dmEmbed(
                 self.user
             )

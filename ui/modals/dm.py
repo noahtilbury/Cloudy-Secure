@@ -1,5 +1,6 @@
 from discord import ui
 import discord
+from shared import interactions
 
 class dmEmbed(ui.Modal):
     def __init__(self, user):
@@ -15,4 +16,4 @@ class dmEmbed(ui.Modal):
     async def callback(self, interaction: discord.Interaction):
         user = await interaction.client.fetch_user(self.user.id)
         await user.send(self.children[0].value)
-        await interaction.response.send_message(f"Sent message to {user.mention}", ephemeral=True)
+        await interactions.respond(interaction, f"Sent message to {user.mention}", ephemeral=True)

@@ -4,10 +4,11 @@ from ui.modals.recovery_secret import recoveryAuthModal
 from ui.modals.recovery_code import recoveryCodeModal
 from discord.ext import commands
 import discord
-import json
+from shared import interactions
 
-bot_config = json.load(open("config/bot.json", "r"))
-name = bot_config["enabled_commands"]["aliases"]["secure"]
+from shared.settings import command_alias
+
+name = command_alias("secure")
 
 class Dropdown(discord.ui.Select):
     def __init__(self):
@@ -55,8 +56,8 @@ class Dropdown(discord.ui.Select):
                 modal = recoveryAuthModal()
             case "bulk_pwdsecret":
                 modal = BulkAuthRecoveryModal()
-            
-        await interaction.response.send_modal(modal)
+
+        await interactions.send_modal(interaction, modal)
 
 
 class SecureMethodView(discord.ui.View):
@@ -76,13 +77,13 @@ class secure(commands.Cog):
         if ctx.author.id not in self.bot.admins:
             await ctx.respond("You do not have permission to execute this command!", ephemeral=True)
             return
-    
-       
+
+
         embed = discord.Embed(
             title = "Select Securing Method",
             description = """
             Choose how you want to authenticate:
-           
+
             **Recovery Code**
             Use your email and recovery code
 

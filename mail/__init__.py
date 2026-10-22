@@ -1,4 +1,4 @@
-"""Inbound mail for AutoSecure / Sunny Secure.
+"""Inbound mail for Cloudy Secure.
 
 Default provider is **mail.tm** — free disposable inboxes, no domain, no MX
 records and no SMTP server to host:

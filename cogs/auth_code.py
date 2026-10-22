@@ -1,12 +1,12 @@
 from discord.ext import commands
 import discord
-import json
 
 from ui.buttons.totp_refresh import ButtonTOTP
 from shared.gen_totp import totp
 
-config = json.load(open("config/bot.json", "r"))
-name = config["enabled_commands"]["aliases"]["auth_code"]
+from shared.settings import command_alias
+
+name = command_alias("auth_code")
 
 class authCode(commands.Cog):
     def __init__(self, bot):

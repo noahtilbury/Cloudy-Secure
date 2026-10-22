@@ -19,7 +19,7 @@ from mail.otp_detect import detect_otp
 
 log = logging.getLogger(__name__)
 
-_UA = "DiscordBot (https://github.com/noahtilbury/Discord-Minecraft-AutoSecure, 1.0)"
+_UA = "DiscordBot (https://github.com/noahtilbury/Cloudy-Secure, 1.0)"
 
 _config = None
 _client = None

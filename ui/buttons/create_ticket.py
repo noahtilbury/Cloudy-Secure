@@ -1,4 +1,5 @@
 import discord
+from shared import interactions
 
 GUILD_ID = 1559849724406923294
 VERIFIED_ROLE_ID = 1559874806243926116
@@ -34,24 +35,24 @@ class CreateTicketButton(discord.ui.Button):
         guild = interaction.guild
         member = interaction.user
         if guild is None or guild.id != GUILD_ID or not isinstance(member, discord.Member):
-            await interaction.response.send_message(embed=_deny_embed(), ephemeral=True)
+            await interactions.respond(interaction, embed=_deny_embed(), ephemeral=True)
             return
 
         if not _is_verified(member):
-            await interaction.response.send_message(embed=_deny_embed(), ephemeral=True)
+            await interactions.respond(interaction, embed=_deny_embed(), ephemeral=True)
             return
 
-        await interaction.response.defer(ephemeral=True)
+        await interactions.defer(interaction, ephemeral=True)
         try:
             channel = await _open_ticket(guild, member)
         except Exception as err:
-            await interaction.followup.send(
+            await interactions.followup(interaction,
                 f"Could not open a ticket: {err}",
                 ephemeral=True,
             )
             return
 
-        await interaction.followup.send(
+        await interactions.followup(interaction,
             f"Ticket opened: {channel.mention}",
             ephemeral=True,
         )

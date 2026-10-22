@@ -1,6 +1,7 @@
 from discord import ui
 import discord
 from ui.buttons.extra_info import ExtraInfoButtons
+from shared import interactions
 
 class accountInfo(ui.View):
     def __init__(self, embeds: dict):
@@ -19,21 +20,21 @@ class accountInfo(ui.View):
 
     @discord.ui.button(label="Minecraft", style=discord.ButtonStyle.green, custom_id="persistent:button_mc", row=1)
     async def showMinecraft(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_message(
+        await interactions.respond(interaction,
             embed=self.xbox,
             ephemeral=True
         )
 
     @discord.ui.button(label="SSID", style=discord.ButtonStyle.green, custom_id="persistent:button_ssid", row=1)
     async def showSSID(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_message(
+        await interactions.respond(interaction,
             embed = self.ssid,
             ephemeral = True
         )
 
     @discord.ui.button(label="Extra Info", style=discord.ButtonStyle.grey, custom_id="persistent:button_info", row=2)
     async def extraInfo(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_message(
+        await interactions.respond(interaction,
             embed=self.dob,
             view=ExtraInfoButtons(self.family, self.devices, self.cards, self.subs, self.phones),
             ephemeral=True
@@ -41,7 +42,7 @@ class accountInfo(ui.View):
 
     @discord.ui.button(label="Copy Details", style=discord.ButtonStyle.grey, custom_id="persistent:button_details", row=2)
     async def showInfo(self, button: discord.ui.Button, interaction: discord.Interaction):
-        await interaction.response.send_message(
+        await interactions.respond(interaction,
             self.details,
             ephemeral=True
         )

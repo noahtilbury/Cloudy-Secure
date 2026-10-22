@@ -30,7 +30,10 @@ from securing.utils.cookies.get_t import get_t
 from securing.utils.cookies.safe_cookies import iter_cookies
 
 from securing.utils.security.logout_all import logout_all
-from securing.auth.polish_host import ensure_login_session, login_session_ready
+from securing.auth.polish_host import (
+    ensure_login_session,
+    security_session_ready,
+)
 
 from minecraft.get_profile import get_profile
 from minecraft.get_ssid import get_ssid
@@ -545,12 +548,12 @@ async def secure(
     t = None
     try:
         t = await get_t(session)
-        if not t:
-            # No classic t token means the login never finished — login.live.com
-            # hands back the i5030 sign-in page, which is also what kills AMC
-            # silent sign-in and Xbox sisu. Re-run the OTP login once before
-            # carrying on with a session that cannot do anything.
-            ms = account_info.get("microsoft") or {}
+        ms = account_info.get("microsoft") or {}
+        if not t or not security_session_ready(session):
+            # No classic t token (or no WLSSC) means the login never finished —
+            # login.live.com hands back the i5030 sign-in page, which is also
+            # what kills AMC silent sign-in and Xbox sisu. Re-run the OTP login
+            # once before carrying on with a session that cannot do anything.
             if await ensure_login_session(
                 session, ms.get("email") or "", ms.get("security_email")
             ):
@@ -560,7 +563,7 @@ async def secure(
             print(f"[+] - Got T / AMRP")
         else:
             print("[!] - No classic login t token (already signed in) — skipping AMRP")
-            if not login_session_ready(session):
+            if not security_session_ready(session):
                 print(
                     "[!] - login.live.com session incomplete (no WLSSC) — "
                     "AMC/Xbox calls will fail on the sign-in page"
